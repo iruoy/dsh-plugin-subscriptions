@@ -741,10 +741,12 @@ export class ClaudeAdapter extends LlmAdapter {
     const watchdog = idleWatchdog(options.signal, this.options.streamIdleTimeoutMs)
     try {
       let session = await this.options.tokens.session(account)
-      let response = await this.request(options, session, watchdog.signal)
+      // Resolved once: the 401 retry below reuses the same bytes.
+      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
+      let response = await this.request(options, messages, session, watchdog.signal)
       if (response.status === 401) {
         session = await this.options.tokens.session(account, true)
-        response = await this.request(options, session, watchdog.signal)
+        response = await this.request(options, messages, session, watchdog.signal)
       }
       if (!response.ok) {
         throw await httpLlmError(response, 'claude API', {
@@ -780,8 +782,12 @@ export class ClaudeAdapter extends LlmAdapter {
     return undefined
   }
 
-  private async request(options: GenerateOptions, session: ClaudeSession, signal: AbortSignal): Promise<Response> {
-    const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), signal)
+  private async request(
+    options: GenerateOptions,
+    messages: readonly TranslatableMessage[],
+    session: ClaudeSession,
+    signal: AbortSignal,
+  ): Promise<Response> {
     const disc = await this.discovered(options.model)
     const maxTokens = options.maxTokens
       ?? claudeMaxTokens(this.options.models.find(entry => entry.id === options.model), disc)

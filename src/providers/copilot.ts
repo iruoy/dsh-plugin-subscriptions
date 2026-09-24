@@ -28,6 +28,7 @@ import type { ProviderId } from '../auth/store.js'
 import type { PoolAdapter } from './pool.js'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { hasImages, resolveImages } from '../translate/resolved.js'
+import type { TranslatableMessage } from '../translate/resolved.js'
 import {
   streamChatCompletions,
   toChatMessages,
@@ -960,11 +961,13 @@ export class CopilotAdapter extends LlmAdapter {
         options,
       )
       let session = await this.options.tokens.session(account)
+      // Resolved once: the 401 retry below reuses the same bytes.
+      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
       // Replay scope: account identity × conversation × model (see
       // replayScope); a Copilot-token refresh preserves the GitHub token, so
       // the 401 retry below reuses it too.
       const scope = this.replayScope(session.refreshToken, options)
-      let response = await this.request(options, session, watchdog.signal, wire, scope)
+      let response = await this.request(options, messages, session, watchdog.signal, wire, scope)
       if (response.status === 401) {
         // One forced refresh + retry on an unexpired-but-rejected token. The
         // editor version is force-refreshed too: a 401 `IDE token expired`
@@ -972,7 +975,7 @@ export class CopilotAdapter extends LlmAdapter {
         // Editor-Version header fixes that (a new token does not).
         await latestVsCodeVersion(this.options.fetchFn ?? proxiedFetch, true)
         session = await this.options.tokens.session(account, true)
-        response = await this.request(options, session, watchdog.signal, wire, scope)
+        response = await this.request(options, messages, session, watchdog.signal, wire, scope)
       }
       if (!response.ok) {
         throw await httpLlmError(response, 'copilot API', {
@@ -1004,12 +1007,12 @@ export class CopilotAdapter extends LlmAdapter {
 
   private async request(
     options: GenerateOptions,
+    messages: readonly TranslatableMessage[],
     session: CopilotSession,
     signal: AbortSignal,
     wire: CopilotWire,
     replayScopeKey: string,
   ): Promise<Response> {
-    const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), signal)
     const hasVision = hasImages(messages)
     const body = wire === 'responses'
       ? copilotResponsesRequestBody(options, toResponsesInput(

@@ -19,6 +19,7 @@ import type { ProviderId } from '../auth/store.js'
 import type { PoolAdapter } from './pool.js'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { resolveImages } from '../translate/resolved.js'
+import type { TranslatableMessage } from '../translate/resolved.js'
 import { streamResponses, toResponsesInput, toResponsesTools } from '../translate/responses.js'
 import type { ResponsesRequestInput } from '../translate/responses.js'
 import {
@@ -836,11 +837,13 @@ export class GrokAdapter extends LlmAdapter {
     const watchdog = idleWatchdog(options.signal, this.options.streamIdleTimeoutMs)
     try {
       let session = await this.options.tokens.session(account)
-      let response = await this.request(options, session, watchdog.signal)
+      // Resolved once: the 401 retry below reuses the same bytes.
+      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
+      let response = await this.request(options, messages, session, watchdog.signal)
       if (response.status === 401) {
         // One forced refresh + retry on an unexpired-but-rejected token.
         session = await this.options.tokens.session(account, true)
-        response = await this.request(options, session, watchdog.signal)
+        response = await this.request(options, messages, session, watchdog.signal)
       }
       if (!response.ok) {
         throw await httpLlmError(response, 'grok API', {
@@ -859,8 +862,12 @@ export class GrokAdapter extends LlmAdapter {
     }
   }
 
-  private async request(options: GenerateOptions, session: GrokSession, signal: AbortSignal): Promise<Response> {
-    const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), signal)
+  private async request(
+    options: GenerateOptions,
+    messages: readonly TranslatableMessage[],
+    session: GrokSession,
+    signal: AbortSignal,
+  ): Promise<Response> {
     const body = grokRequestBody(options, toResponsesInput(messages, options.system))
     return proxiedFetch(GROK_API_URL, {
       method: 'POST',

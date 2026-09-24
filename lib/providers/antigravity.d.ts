@@ -81,15 +81,11 @@ export interface AntigravityAdapterOptions {
 /** DSH provider adapter for the `antigravity` route. */
 export declare class AntigravityAdapter extends LlmAdapter {
     private readonly options;
-    private readonly catalog;
-    private readonly accountCatalogs;
-    private catalogOwner;
+    private readonly catalogs;
     constructor(options: AntigravityAdapterOptions);
     providerInfo(provider: string): LlmProviderInfo;
     /** Drop cached catalogs after login/logout so the next list does not reuse a stale plan. */
     clearAccountCatalog(account?: string): void;
-    /** Persisted cache for the default account; a throwaway cache for any other. */
-    private catalogFor;
     providerRetryPolicy(provider: string): import("@deepseek-ai/dsh-llm").ResolvedRetryPolicy;
     private staticModels;
     private fetchCatalog;

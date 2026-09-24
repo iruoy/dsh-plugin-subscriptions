@@ -27,7 +27,7 @@ import {
   idleWatchdog,
   mapFetchFailure,
   mergeReasoning,
-  ModelCatalogCache,
+  AccountCatalogCache,
   discoverAcrossAccounts,
   discoverOrRetryAuth,
   isDiscoveryAborted,
@@ -633,22 +633,16 @@ export interface GrokAdapterOptions {
 
 /** Grok wire adapter: one instance serves the `grok` provider route. */
 export class GrokAdapter extends LlmAdapter {
-  private readonly catalog: ModelCatalogCache
-  /** In-memory catalogs for non-default accounts (the persisted cache is the default's). */
-  private readonly accountCatalogs = new Map<string, ModelCatalogCache>()
-  /** Account whose snapshot currently lives in {@link catalog}; cleared on default change. */
-  private catalogOwner: string | undefined
+  private readonly catalogs: AccountCatalogCache
 
   constructor(private readonly options: GrokAdapterOptions) {
     super()
-    this.catalog = new ModelCatalogCache(options.catalogStore)
+    this.catalogs = new AccountCatalogCache(options.catalogStore, () => options.tokens.defaultAccount())
   }
 
   /** Discovery fetcher: resolves the session through the refresh-aware path. */
   private async fetchCatalog(account?: string, signal?: AbortSignal): Promise<DiscoveredModel[]> {
-    const lastKnown = account === undefined || account === await this.options.tokens.defaultAccount()
-      ? this.catalog.lastKnown()
-      : this.accountCatalogs.get(account)?.lastKnown()
+    const lastKnown = await this.catalogs.lastKnown(account)
     return fetchGrokModels(
       await this.options.tokens.session(account),
       this.options.fetchFn,
@@ -660,31 +654,7 @@ export class GrokAdapter extends LlmAdapter {
 
   /** Drop cached catalogs after login/logout so the next list does not reuse a stale plan. */
   clearAccountCatalog(account?: string): void {
-    if (account === undefined) this.accountCatalogs.clear()
-    else this.accountCatalogs.delete(account)
-    if (account === undefined || this.catalogOwner === account || this.catalogOwner === undefined) {
-      this.catalogOwner = undefined
-      this.catalog.invalidate()
-    }
-  }
-
-  /** Persisted cache for the default account; a throwaway cache for any other. */
-  private async catalogFor(account?: string): Promise<ModelCatalogCache> {
-    const defaultKey = await this.options.tokens.defaultAccount()
-    const key = account ?? defaultKey
-    if (key === undefined || key === defaultKey) {
-      if (this.catalogOwner !== undefined && this.catalogOwner !== defaultKey) {
-        this.catalog.invalidate()
-      }
-      this.catalogOwner = defaultKey
-      return this.catalog
-    }
-    let cache = this.accountCatalogs.get(key)
-    if (cache === undefined) {
-      cache = new ModelCatalogCache()
-      this.accountCatalogs.set(key, cache)
-    }
-    return cache
+    this.catalogs.clear(account)
   }
 
   private listed(provider: string, discovered: readonly DiscoveredModel[]): LlmModelInfo[] {
@@ -743,7 +713,7 @@ export class GrokAdapter extends LlmAdapter {
       return []
     }
     if (!this.options.discovery) return this.staticModels(provider)
-    const catalog = await this.catalogFor(account)
+    const catalog = await this.catalogs.for(account)
     try {
       // The fetcher runs only on a cache miss, and resolves the session
       // through the refresh-aware path so an expired access token renews here
@@ -777,7 +747,7 @@ export class GrokAdapter extends LlmAdapter {
     if (!this.options.discovery) return undefined
     const accounts = (await this.options.tokens.list()).map(entry => entry.key)
     return discoverAcrossAccounts(accounts, async account => {
-      const catalog = await this.catalogFor(account)
+      const catalog = await this.catalogs.for(account)
       const models = await catalog.resolve(() => this.fetchCatalog(account))
       return models?.find(entry => entry.id === model)
     })

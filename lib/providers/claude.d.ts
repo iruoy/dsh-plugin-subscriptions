@@ -125,17 +125,11 @@ export declare function claudeRequestBody(options: GenerateOptions, messages: re
 /** Claude wire adapter: one instance serves the `claude` provider route. */
 export declare class ClaudeAdapter extends LlmAdapter {
     private readonly options;
-    private readonly catalog;
-    /** In-memory catalogs for non-default accounts (the persisted cache is the default's). */
-    private readonly accountCatalogs;
-    /** Account whose snapshot currently lives in {@link catalog}; cleared on default change. */
-    private catalogOwner;
+    private readonly catalogs;
     constructor(options: ClaudeAdapterOptions);
     private fetchCatalog;
     /** Drop cached catalogs after login/logout so the next list does not reuse a stale plan. */
     clearAccountCatalog(account?: string): void;
-    /** Persisted cache for the default account; a throwaway cache for any other. */
-    private catalogFor;
     private discovered;
     private staticModels;
     providerInfo(provider: string): LlmProviderInfo;

@@ -355,6 +355,38 @@ export declare class ModelCatalogCache {
     /** Drop the cached catalog (e.g. after a 401 proved the credential changed). */
     invalidate(): void;
 }
+/**
+ * Per-account model catalogs for one provider adapter: the persisted cache
+ * belongs to the default account, every other account gets an in-memory one.
+ * A change of default account invalidates the persisted snapshot, since it
+ * was fetched with the previous default's plan.
+ */
+export declare class AccountCatalogCache {
+    private readonly defaultAccount;
+    private readonly defaultCatalog;
+    /** In-memory catalogs for non-default accounts. */
+    private readonly accounts;
+    /** Account whose snapshot currently lives in {@link defaultCatalog}; cleared on default change. */
+    private owner;
+    constructor(persistence: CatalogPersistence | undefined, defaultAccount: () => Promise<string | undefined>);
+    /**
+     * Drop cached catalogs after login/logout so the next list does not reuse a stale plan.
+     * @param account - the account to drop, or every account when omitted.
+     */
+    clear(account?: string): void;
+    /**
+     * Persisted cache for the default account; a throwaway cache for any other.
+     * @param account - the account, or the default when omitted.
+     * @returns that account's catalog cache.
+     */
+    for(account?: string): Promise<ModelCatalogCache>;
+    /**
+     * An account's last-known catalog, ignoring TTL and without creating a cache.
+     * @param account - the account, or the default when omitted.
+     * @returns the last-known models, or `undefined` when nothing has been stored.
+     */
+    lastKnown(account?: string): Promise<readonly DiscoveredModel[] | undefined>;
+}
 /** Whether discovery failed because the stored login is gone. */
 export declare function isMissingOrInvalidCredential(error: unknown): boolean;
 /** Whether discovery stopped because the caller cancelled or the timeout fired. */

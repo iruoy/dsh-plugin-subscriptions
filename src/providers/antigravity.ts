@@ -28,7 +28,7 @@ import {
   idleWatchdog,
   mapFetchFailure,
   mergeReasoning,
-  ModelCatalogCache,
+  AccountCatalogCache,
   discoverOrRetryAuth,
   isMissingOrInvalidCredential,
   oauthEndpointError,
@@ -493,13 +493,11 @@ export interface AntigravityAdapterOptions {
 
 /** DSH provider adapter for the `antigravity` route. */
 export class AntigravityAdapter extends LlmAdapter {
-  private readonly catalog: ModelCatalogCache
-  private readonly accountCatalogs = new Map<string, ModelCatalogCache>()
-  private catalogOwner: string | undefined
+  private readonly catalogs: AccountCatalogCache
 
   constructor(private readonly options: AntigravityAdapterOptions) {
     super()
-    this.catalog = new ModelCatalogCache(options.catalogStore)
+    this.catalogs = new AccountCatalogCache(options.catalogStore, () => options.tokens.defaultAccount())
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
@@ -508,31 +506,7 @@ export class AntigravityAdapter extends LlmAdapter {
 
   /** Drop cached catalogs after login/logout so the next list does not reuse a stale plan. */
   clearAccountCatalog(account?: string): void {
-    if (account === undefined) this.accountCatalogs.clear()
-    else this.accountCatalogs.delete(account)
-    if (account === undefined || this.catalogOwner === account || this.catalogOwner === undefined) {
-      this.catalogOwner = undefined
-      this.catalog.invalidate()
-    }
-  }
-
-  /** Persisted cache for the default account; a throwaway cache for any other. */
-  private async catalogFor(account?: string): Promise<ModelCatalogCache> {
-    const defaultKey = await this.options.tokens.defaultAccount()
-    const key = account ?? defaultKey
-    if (key === undefined || key === defaultKey) {
-      if (this.catalogOwner !== undefined && this.catalogOwner !== defaultKey) {
-        this.catalog.invalidate()
-      }
-      this.catalogOwner = defaultKey
-      return this.catalog
-    }
-    let cache = this.accountCatalogs.get(key)
-    if (cache === undefined) {
-      cache = new ModelCatalogCache()
-      this.accountCatalogs.set(key, cache)
-    }
-    return cache
+    this.catalogs.clear(account)
   }
 
   override providerRetryPolicy(provider: string) {
@@ -578,7 +552,7 @@ export class AntigravityAdapter extends LlmAdapter {
     }
     if (await this.options.tokens.peek(account) === undefined) return []
     if (!this.options.discovery) return this.staticModels(provider)
-    const catalog = await this.catalogFor(account)
+    const catalog = await this.catalogs.for(account)
     try {
       const models = await discoverOrRetryAuth(
         force => this.options.tokens.session(account, force),
@@ -604,7 +578,7 @@ export class AntigravityAdapter extends LlmAdapter {
     if (!this.options.discovery) return undefined
     const accounts = account === undefined ? (await this.options.tokens.list()).map(entry => entry.key) : [account]
     return discoverAcrossAccounts(accounts, async key => {
-      const catalog = await this.catalogFor(key)
+      const catalog = await this.catalogs.for(key)
       const models = await catalog.resolve(() => this.fetchCatalog(key))
       return models?.find(entry => entry.id === model)
     })

@@ -136,7 +136,6 @@ export declare function anthropicFailure(error: {
 export declare class AnthropicStreamTranslator {
     private blocks;
     private nextIndex;
-    private sawAnyBlock;
     private pendingUsage;
     private outputTokens;
     private stopReason;

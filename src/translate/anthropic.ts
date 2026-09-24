@@ -330,7 +330,6 @@ export function anthropicFailure(error: { type?: string; message?: string } | un
 export class AnthropicStreamTranslator {
   private blocks = new Map<number, OpenBlock>()
   private nextIndex = 0
-  private sawAnyBlock = false
   private pendingUsage: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number } | undefined
   private outputTokens: number | undefined
   private stopReason: 'stop' | 'tool-calls' | 'max-tokens' = 'stop'
@@ -347,7 +346,6 @@ export class AnthropicStreamTranslator {
       ...name === undefined ? {} : { name },
     }
     this.blocks.set(wireIndex, block)
-    this.sawAnyBlock = true
     chunks.push({ type: 'block-start', index: block.index, blockType: kind })
     return block
   }
@@ -482,7 +480,7 @@ export class AnthropicStreamTranslator {
           chunks.push({ type: 'block-end', index: block.index, block: closeBlock(block) })
         }
         this.emitUsage(chunks)
-        if (this.stopReason === 'stop' && !this.sawAnyBlock) {
+        if (this.stopReason === 'stop' && this.nextIndex === 0) {
           chunks.push({
             type: 'finish',
             reason: {

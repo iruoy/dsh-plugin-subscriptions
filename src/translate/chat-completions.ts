@@ -204,7 +204,6 @@ export function mapChatCompletionsUsage(usage: ChatCompletionsUsage): TokenUsage
 export class ChatCompletionsStreamTranslator {
   /** Text/reasoning blocks keyed by kind; tool calls keyed by their wire index. */
   private blocks = new Map<string, OpenBlock>()
-  private order: OpenBlock[] = []
   private nextIndex = 0
   private sawToolCall = false
   private pendingUsage: ChatCompletionsUsage | undefined
@@ -221,7 +220,6 @@ export class ChatCompletionsStreamTranslator {
       ...name === undefined ? {} : { name },
     }
     this.blocks.set(key, block)
-    this.order.push(block)
     chunks.push({ type: 'block-start', index: block.index, blockType: kind })
     return block
   }
@@ -239,7 +237,7 @@ export class ChatCompletionsStreamTranslator {
 
   /** Build the terminal finish chunk for one wire finish reason. */
   private finishChunk(finishReason: string | null | undefined): StreamChunk {
-    if (this.order.length === 0) {
+    if (this.nextIndex === 0) {
       return {
         type: 'finish',
         reason: {

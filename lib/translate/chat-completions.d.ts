@@ -84,7 +84,6 @@ export declare function mapChatCompletionsUsage(usage: ChatCompletionsUsage): To
 export declare class ChatCompletionsStreamTranslator {
     /** Text/reasoning blocks keyed by kind; tool calls keyed by their wire index. */
     private blocks;
-    private order;
     private nextIndex;
     private sawToolCall;
     private pendingUsage;

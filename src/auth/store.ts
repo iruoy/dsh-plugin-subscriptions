@@ -15,7 +15,7 @@
 
 import { createHash } from 'node:crypto'
 import { decodeJwtPayload } from './jwt.js'
-import { readFile, rename, rm } from 'node:fs/promises'
+import { readFile, rename, rm, stat } from 'node:fs/promises'
 import { writePrivateJson } from '../private-json.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 
@@ -326,7 +326,16 @@ function assertSessionShape(provider: ProviderId, account: string, value: unknow
 export async function loadStore(path = authFilePath()): Promise<SessionMap> {
   let text: string
   try {
+    // Stat before reading: a write landing in between leaves the cache holding
+    // newer content under an older signature, which only costs one re-read.
+    const signature = fileSignature(await stat(path))
+    const cached = parsedStores.get(path)
+    // Callers mutate what they load (the writers do), so hand out copies.
+    if (cached?.signature === signature) return structuredClone(cached.store)
     text = await readFile(path, 'utf8')
+    const store = parseStore(text, path)
+    parsedStores.set(path, { signature, store: structuredClone(store) })
+    return store
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     // Migrate the pre-rename store once, preserving existing logins.
@@ -342,7 +351,19 @@ export async function loadStore(path = authFilePath()): Promise<SessionMap> {
     await rm(legacyAuthFilePath(), { force: true })
     return migrated
   }
-  return parseStore(text, path)
+}
+
+/**
+ * The last parse of each store path, keyed by the file's stat signature.
+ * Every account lookup reads the store, several times per request, so an
+ * unchanged file skips the read, parse and validation. A write (ours: the
+ * atomic rename gives a new inode; or an external edit) changes the signature.
+ */
+const parsedStores = new Map<string, { signature: string; store: SessionMap }>()
+
+/** Identify one version of a file: inode, size and modification time. */
+function fileSignature(stats: { ino: number; size: number; mtimeMs: number }): string {
+  return `${String(stats.ino)}:${String(stats.size)}:${String(stats.mtimeMs)}`
 }
 
 /**

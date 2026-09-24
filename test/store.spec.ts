@@ -357,3 +357,19 @@ test('Codex config references resolve by unique email or workspace ID, never amb
   assert.equal(await resolveAccountKey('codex', 'bob@example.com', path), accountKeyOf('codex', bob))
   assert.equal(await resolveAccountKey('claude', 'alice@example.com', path), 'alice@example.com', 'other providers unchanged')
 })
+
+test('loadStore picks up an external edit and hands out copies of its cached parse', async () => {
+  const path = storePath()
+  await saveAccountSession('codex', CODEX.accountId, CODEX, path)
+  const first = await loadStore(path)
+  // Mutating a loaded store must not leak into the next read.
+  delete first.codex
+  assert.equal((await loadStore(path)).codex?.default, CODEX.accountId)
+  // An in-place external edit (no rename, so the inode stays) still invalidates.
+  const edited = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  writeFileSync(path, JSON.stringify({
+    ...edited,
+    claude: { default: 'alice@example.com', accounts: { 'alice@example.com': CLAUDE } },
+  }))
+  assert.equal((await loadStore(path)).claude?.default, 'alice@example.com')
+})

@@ -675,12 +675,11 @@ export function apply(ctx: Context, config: Config): void {
     onWarn,
   })
   const authChanged = (provider: ProviderId, account?: string): void => {
-    if (provider === 'codex' || provider === 'grok') imagePool.clear(provider, account)
-    // Login, logout, and credential death all pass through here; a copilot
-    // auth transition also drops the adapter's captured reasoning replay
-    // state (isolation is already account-scoped — this is memory hygiene).
-    if (provider === 'copilot') copilotAdapter?.clearReplayState()
-    adapters.get(provider)?.clearAccountCatalog(account)
+    // Login, logout, and credential death all pass through here.
+    imagePool.clear(provider, account)
+    const adapter = adapters.get(provider)
+    adapter?.clearAccountCatalog(account)
+    adapter?.authChanged?.(account)
     poolHealth?.clear(provider, account)
     poolUsage?.invalidate(provider, account)
     poolAdapter?.invalidate()
@@ -705,9 +704,6 @@ export function apply(ctx: Context, config: Config): void {
   // fast-tier support so a stale choice cannot leak onto a plain model.
   const speedBySession = new Map<string, SpeedTier>()
   let codexAdapter: CodexAdapter | undefined
-  // Dropped on every copilot auth transition so replay state (captured
-  // reasoning) never survives an account switch in memory.
-  let copilotAdapter: CopilotAdapter | undefined
   const memberAdapters = new Map<ProviderId, AccountAwareAdapter>()
   const register = (provider: ProviderId, adapter: AccountAwareAdapter): AdapterRegistrationHandle => {
     const route = new AccountPreferencesAdapter({
@@ -841,7 +837,7 @@ export function apply(ctx: Context, config: Config): void {
           onAccountRemoved: account => { authChanged('copilot', account) },
         })
         accountTokens.set('copilot', tokens as AccountTokenManager<StoredSession>)
-        copilotAdapter = new CopilotAdapter({
+        const copilotAdapter = new CopilotAdapter({
           models: catalog.copilot,
           streamIdleTimeoutMs,
           rateLimit,

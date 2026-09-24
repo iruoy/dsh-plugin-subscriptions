@@ -326,6 +326,8 @@ export declare class CopilotAdapter extends LlmAdapter {
      * bounded by the TTL and the caps.
      */
     clearReplayState(): void;
+    /** Auth transitions drop the captured replay state (isolation is already account-scoped — this is memory hygiene). */
+    authChanged(): void;
     resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo>;
     /** Capability resolution of the provider's own models (the pool resolves members here). */
     resolveOwnModel(provider: string, model: string): Promise<LlmResolvedModelInfo>;

@@ -25,8 +25,13 @@ export class ImageAccountPool {
 
   constructor(private readonly options: { enabled?: boolean; onWarn?: (message: string) => void } = {}) {}
 
-  /** Login/logout clears cooling image members and stale session affinity. */
-  clear(provider: ImageProvider, account?: string): void {
+  /**
+   * Login/logout clears cooling image members and stale session affinity.
+   * Providers without image generation are ignored, so any auth change can
+   * pass through here.
+   */
+  clear(provider: string, account?: string): void {
+    if (provider !== 'codex' && provider !== 'grok') return
     this.health.clear(provider, account)
     this.sticky = new WeakMap()
   }

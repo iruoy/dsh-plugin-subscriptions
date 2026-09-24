@@ -51,6 +51,8 @@ export interface AccountAwareAdapter extends LlmAdapter {
   resolveOwnModel(provider: string, model: string, account?: string): Promise<LlmResolvedModelInfo>
   /** Drop cached catalogs: one account, or every account when omitted (login/logout). */
   clearAccountCatalog(account?: string): void
+  /** Drop provider-private state on a login, logout, or credential death. */
+  authChanged?(account?: string): void
 }
 
 /** Options for {@link unionAccountCatalogs}. */

@@ -23,8 +23,12 @@ export declare class ImageAccountPool {
         enabled?: boolean;
         onWarn?: (message: string) => void;
     });
-    /** Login/logout clears cooling image members and stale session affinity. */
-    clear(provider: ImageProvider, account?: string): void;
+    /**
+     * Login/logout clears cooling image members and stale session affinity.
+     * Providers without image generation are ignored, so any auth change can
+     * pass through here.
+     */
+    clear(provider: string, account?: string): void;
     request<S extends ImageSession>(request: ImageAccountRequest<S>): Promise<Response>;
 }
 export {};

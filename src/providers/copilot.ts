@@ -873,6 +873,11 @@ export class CopilotAdapter extends LlmAdapter {
     this.replayByScope.clear()
   }
 
+  /** Auth transitions drop the captured replay state (isolation is already account-scoped — this is memory hygiene). */
+  authChanged(): void {
+    this.clearReplayState()
+  }
+
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     const pool = this.options.pool?.()
     if (pool !== undefined && await pool.owns(provider as ProviderId, model)) {

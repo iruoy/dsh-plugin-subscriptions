@@ -141,8 +141,9 @@ function conversationStart(messages: readonly TranslatableMessage[]): number {
  */
 export function toAnthropicMessages(messages: readonly TranslatableMessage[]): AnthropicMessage[] {
   const out: AnthropicMessage[] = []
-  const start = conversationStart(messages)
-  for (const [index, message] of withToolResultBlocks(messages).entries()) {
+  const normalized = withToolResultBlocks(messages)
+  const start = conversationStart(normalized)
+  for (const [index, message] of normalized.entries()) {
     // A leading system message is an opening instruction; toAnthropicSystem
     // owns those. A later one rides here so the cached prefix ahead of it
     // stays byte-identical.

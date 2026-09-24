@@ -16,7 +16,7 @@
 import type { CSSProperties } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { IconSparkle16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSparkleRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageGallery } from './ImageGallery.js'
 import type { ImageAttachmentRef, ImageLoader, MessageImageLabels } from './ImageGallery.js'
 import { callSubscriptionsAuth } from './subscriptions-rpc.js'
@@ -111,7 +111,7 @@ export function ImageGenerateToolview(props: ImageGenerateToolviewProps) {
   const t = props.t ?? fallbackTranslate
   if (block === undefined) return null
   const settled = 'kind' in block
-  const argsRaw = (settled ? block.call?.argsRaw : block.argsRaw) ?? ''
+  const argsRaw = (settled ? block.call?.argsRaw : 'argsRaw' in block ? block.argsRaw : undefined) ?? ''
   let references = 0
   try {
     const args = JSON.parse(argsRaw)
@@ -131,7 +131,7 @@ export function ImageGenerateToolview(props: ImageGenerateToolviewProps) {
   return (
     <div style={styles.container}>
       <div style={styles.row}>
-        <span style={styles.icon}><IconSparkle16 size={14} /></span>
+        <span style={styles.icon}><IconSparkleRegular size={14} /></span>
         <span style={styles.title}>{title}</span>
       </div>
       {!settled && <p style={styles.subtle}>{t('generating')}</p>}

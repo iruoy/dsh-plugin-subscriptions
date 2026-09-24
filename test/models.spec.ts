@@ -644,15 +644,11 @@ test('codexRequestBody bounds tool-call ids without losing their pairings', () =
 })
 
 /** One text-only message of any role, for request-body assembly. */
-function claudeMessage(id: string, role: Message['role'], text: string): Message & TranslatableMessage {
-  return {
-    id: MessageId(id),
-    role,
-    content: [{ type: 'text', text }],
-    source: role === 'assistant'
-      ? { kind: 'model', provider: 'claude', model: 'claude-opus-5' }
-      : { kind: 'user' },
-  }
+function claudeMessage(id: string, role: TranslatableMessage['role'], text: string): Message & TranslatableMessage {
+  const base = { id: MessageId(id), content: [{ type: 'text' as const, text }] }
+  if (role === 'assistant') return { ...base, role, source: { kind: 'model', provider: 'claude', model: 'claude-opus-5' } }
+  if (role === 'system') return { ...base, role, source: { kind: 'system-prompt' } }
+  return { ...base, role, source: { kind: 'user' } }
 }
 
 test('claudeRequestBody ships the cache breakpoints and never exceeds four', () => {

@@ -6,10 +6,11 @@
  */
 
 import { test } from 'node:test'
+import type { InputBlock } from '../src/translate/resolved.js'
 import assert from 'node:assert/strict'
 import { LlmError, MessageId } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '../src/compat.js'
-import type { ContentBlock, Message, MessageSource, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { Message, MessageSource, StreamChunk } from '@deepseek-ai/dsh-llm'
 import {
   ChatCompletionsStreamTranslator,
   mapChatCompletionsUsage,
@@ -25,7 +26,7 @@ let messageCounter = 0
 /** Build a bare message without touching the frozen constructors. */
 function message(
   role: Message['role'],
-  content: ContentBlock[],
+  content: InputBlock[],
   source?: MessageSource,
 ): Message & TranslatableMessage {
   const resolvedSource = source ?? (role === 'assistant'
@@ -36,11 +37,11 @@ function message(
   return { id: MessageId(`m-${++messageCounter}`), role, content, source: resolvedSource } as Message & TranslatableMessage
 }
 
-function toolCall(id: string, name: string, args: string): ContentBlock {
+function toolCall(id: string, name: string, args: string): InputBlock {
   return { type: 'tool-call', id: ToolCallId(id), name, arguments: args }
 }
 
-function toolResult(callId: string, text: string): ContentBlock {
+function toolResult(callId: string, text: string): InputBlock {
   return {
     type: 'tool-result',
     toolCallId: ToolCallId(callId),

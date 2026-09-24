@@ -7,9 +7,20 @@
  */
 
 import { LlmError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, ImageBlock, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ImageBlock, Message, RequestMessage } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { ToolCallId } from '../compat.js'
+
+/** Legacy tool-result block retained for imported histories and translator input. */
+export interface ToolResultBlock {
+  type: 'tool-result'
+  toolCallId: ToolCallId
+  content: readonly InputBlock[]
+  isError?: boolean
+}
+
+export type InputBlock = ContentBlock | ToolResultBlock
+export type InputMessage = Omit<RequestMessage, 'content'> & { content: readonly InputBlock[] }
 
 /** An image block with its bytes resolved to inline base64 for the wire. */
 export interface ResolvedImagePart {
@@ -118,7 +129,7 @@ export interface TranslatableMessage {
   source?: Message['source']
 }
 
-const hasImage = (block: ContentBlock | TranslatableBlock): boolean => block.type === 'image'
+const hasImage = (block: InputBlock | TranslatableBlock): boolean => block.type === 'image'
   || (block.type === 'tool-result' && block.content.some(hasImage))
 
 /**
@@ -127,7 +138,7 @@ const hasImage = (block: ContentBlock | TranslatableBlock): boolean => block.typ
  * @param messages - conversation messages, resolved or not.
  * @returns true when at least one image block is present.
  */
-export function hasImages(messages: readonly { content: readonly (ContentBlock | TranslatableBlock)[] }[]): boolean {
+export function hasImages(messages: readonly { content: readonly (InputBlock | TranslatableBlock)[] }[]): boolean {
   return messages.some(message => message.content.some(hasImage))
 }
 
@@ -144,7 +155,7 @@ export function hasImages(messages: readonly { content: readonly (ContentBlock |
  * @returns the same messages, resolved and folded for the translators.
  */
 export async function resolveImages(
-  messages: readonly Message[],
+  messages: readonly InputMessage[],
   attachments: AttachmentStore | undefined,
   signal?: AbortSignal,
 ): Promise<readonly TranslatableMessage[]> {
@@ -157,7 +168,7 @@ export async function resolveImages(
       'UNSUPPORTED',
     )
   }
-  const resolveBlock = async (block: ContentBlock): Promise<TranslatableBlock[]> => {
+  const resolveBlock = async (block: InputBlock): Promise<TranslatableBlock[]> => {
     if (block.type === 'tool-result') {
       return [{ ...block, content: (await Promise.all(block.content.map(resolveBlock))).flat() }]
     }

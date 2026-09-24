@@ -1249,7 +1249,7 @@ export function apply(ctx: Context, config: Config): void {
     }
     // Restrictions are scoped to each agent. Keep global definitions registered
     // so already-open sessions retain both their schemas and execution path.
-    toolsCtx.on('agent/created', ({ agent }) => {
+    toolsCtx.on('agent/created', ({ agent }): undefined => {
       const at = agent.session.header.createdAt
       const deny: string[] = []
       if (grokTokens !== undefined) {

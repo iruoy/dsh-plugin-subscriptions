@@ -1,11 +1,12 @@
 /** Antigravity OAuth, catalog/quota, request conversion, and stream tests. */
 
 import { test } from 'node:test'
+import type { InputBlock } from '../src/translate/resolved.js'
 import { ToolCallId } from '../src/compat.js'
 import { AccountTokenManager } from '../src/providers/accounts.js'
 import assert from 'node:assert/strict'
 import { LlmError, MessageId } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AntigravitySession } from '../src/auth/store.js'
 import {
   AntigravityAdapter,
@@ -58,7 +59,7 @@ function routed(routes: Record<string, unknown | Response>, calls: RecordedCall[
   }
 }
 
-function message(role: Message['role'], content: ContentBlock[], source?: Message['source']): Message & TranslatableMessage {
+function message(role: Message['role'], content: InputBlock[], source?: Message['source']): Message & TranslatableMessage {
   // Translator fixtures never carry unresolved images, so the message is
   // valid translator input as-is.
   return {

@@ -28,6 +28,7 @@ export declare class AccountPreferencesAdapter extends LlmAdapter {
     constructor(options: Options);
     private preference;
     private models;
+    /** @param known - the account list, when the caller already loaded it. */
     private requireAccount;
     private fallback;
     /** Pool-only facade: explicit families/tiers must obey the same policy as auto pools. */

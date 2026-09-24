@@ -43,17 +43,24 @@ export class AccountPreferencesAdapter extends LlmAdapter {
   private async models(account: string): Promise<readonly LlmModelInfo[]> {
     return await withTimeout(signal => this.options.adapter.listOwnModels(this.options.provider, account, signal), DISCOVERY_TIMEOUT_MS) ?? []
   }
-  private async requireAccount(account: string, model: string, independent: boolean): Promise<void> {
-    if (!(await this.options.accounts()).some(entry => entry.key === account)
+  /** @param known - the account list, when the caller already loaded it. */
+  private async requireAccount(
+    account: string,
+    model: string,
+    independent: boolean,
+    known?: readonly { key: string }[],
+  ): Promise<void> {
+    if (!(known ?? await this.options.accounts()).some(entry => entry.key === account)
       || (independent ? this.preference(account)?.independentEntry !== true : !accountAllowsPool(this.preference(account), model))
       || !(await this.models(account)).some(entry => entry.id === model)) {
       throw new LlmError(`Account route unavailable: ${this.options.provider}/${account}/${model}`, 'NO_ADAPTER')
     }
   }
   private async fallback(model: string): Promise<string> {
-    for (const { key } of await this.options.accounts()) {
+    const accounts = await this.options.accounts()
+    for (const { key } of accounts) {
       if (!accountAllowsPool(this.preference(key), model)) continue
-      try { await this.requireAccount(key, model, false); return key } catch { /* unavailable catalog */ }
+      try { await this.requireAccount(key, model, false, accounts); return key } catch { /* unavailable catalog */ }
     }
     throw new LlmError(`No eligible account for ${this.options.provider}/${model}`, 'NO_ADAPTER')
   }
@@ -62,9 +69,10 @@ export class AccountPreferencesAdapter extends LlmAdapter {
     const raw = this.options.adapter
     const keyFor = async (account: string | undefined, model: string): Promise<string> => {
       if (model.startsWith(ACCOUNT_MODEL_PREFIX)) throw new LlmError('Independent entries cannot be pool members', 'NO_ADAPTER')
-      const key = account ?? (await this.options.accounts())[0]?.key
+      const accounts = await this.options.accounts()
+      const key = account ?? accounts[0]?.key
       if (!key) throw new LlmError('No account available', 'NO_ADAPTER')
-      await this.requireAccount(key, model, false)
+      await this.requireAccount(key, model, false, accounts)
       return key
     }
     return new Proxy(raw, { get: (target, property) => {
@@ -107,9 +115,10 @@ export class AccountPreferencesAdapter extends LlmAdapter {
   override async resolveModel(provider: string, id: string): Promise<LlmResolvedModelInfo> {
     const independent = parseAccountModelId(id)
     if (independent) {
-      await this.requireAccount(independent.account, independent.model, true)
+      const accounts = await this.options.accounts()
+      await this.requireAccount(independent.account, independent.model, true, accounts)
       const info = await this.options.adapter.resolveOwnModel(provider, independent.model, independent.account)
-      const label = (await this.options.accounts()).find(entry => entry.key === independent.account)?.label ?? independent.account
+      const label = accounts.find(entry => entry.key === independent.account)?.label ?? independent.account
       return { ...info, id, name: `${this.preference(independent.account)?.alias || label} · ${info.name}` }
     }
     const pool = this.options.pool()

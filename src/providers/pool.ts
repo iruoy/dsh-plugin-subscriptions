@@ -176,17 +176,27 @@ export class PoolAdapter extends LlmAdapter {
    * collapse — an explicitly pinned account and the default may coincide.
    */
   private async concrete(members: readonly PoolMemberRef[]): Promise<ConcretePoolMember[]> {
+    // Members resolve independently; dedupe afterwards so config order wins,
+    // and so does the error when several fail.
+    const outcomes = await Promise.allSettled(members.map(async (member) => {
+      const requested = member.account ?? await this.options.defaultAccount(member.provider)
+      if (requested === undefined) return undefined
+      return this.options.resolveAccount?.(member.provider, requested) ?? requested
+    }))
+    const accounts = outcomes.map((outcome) => {
+      if (outcome.status === 'rejected') throw outcome.reason
+      return outcome.value
+    })
     const seen = new Set<string>()
     const resolved: ConcretePoolMember[] = []
-    for (const member of members) {
-      const requested = member.account ?? await this.options.defaultAccount(member.provider)
-      if (requested === undefined) continue
-      const account = await (this.options.resolveAccount?.(member.provider, requested) ?? Promise.resolve(requested))
+    members.forEach((member, index) => {
+      const account = accounts[index]
+      if (account === undefined) return
       const key = memberKey(member.provider, account, member.model)
-      if (seen.has(key)) continue
+      if (seen.has(key)) return
       seen.add(key)
       resolved.push({ provider: member.provider, account, model: member.model })
-    }
+    })
     return resolved
   }
 

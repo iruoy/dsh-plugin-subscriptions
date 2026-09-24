@@ -4,11 +4,12 @@ import { test } from 'node:test'
 import { ToolCallId } from '../src/compat.js'
 import { AccountTokenManager } from '../src/providers/accounts.js'
 import assert from 'node:assert/strict'
-import { MessageId } from '@deepseek-ai/dsh-llm'
+import { LlmError, MessageId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AntigravitySession } from '../src/auth/store.js'
 import {
   AntigravityAdapter,
+  antigravityRateLimitReset,
   ANTIGRAVITY_AUTHORIZE_URL,
   ANTIGRAVITY_TOKEN_URL,
   ANTIGRAVITY_USERINFO_URL,
@@ -382,6 +383,59 @@ test('Antigravity resolves per-model output defaults and bounds configured defau
   })
   assert.equal((await configured.resolveOwnModel('antigravity', 'gemini-3.1-pro-low', 'alice')).defaultMaxTokens, 8192)
   assert.equal((await configured.resolveOwnModel('antigravity', 'gpt-oss-120b-medium', 'alice')).defaultMaxTokens, 32768)
+})
+
+test('antigravityRateLimitReset reads the Cloud Code 429 envelope', () => {
+  const now = Date.parse('2025-10-20T19:14:00Z')
+  const read = (body: unknown): number | undefined =>
+    antigravityRateLimitReset(new Response(null, { status: 429 }), typeof body === 'string' ? body : JSON.stringify(body), now)
+  // Gemini CLI's fixture for the same backend: the earliest disclosed reset wins.
+  const envelope = { error: {
+    code: 429,
+    message: 'You have exhausted your capacity on this model. Your quota will reset after 0s.',
+    status: 'RESOURCE_EXHAUSTED',
+    details: [
+      {
+        '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+        reason: 'RATE_LIMIT_EXCEEDED',
+        domain: 'cloudcode-pa.googleapis.com',
+        metadata: { model: 'gemini-2.5-pro', quotaResetDelay: '539.477544ms', quotaResetTimeStamp: '2025-10-20T19:14:08Z' },
+      },
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0.539477544s' },
+    ],
+  } }
+  assert.equal(read(envelope), now + 539.477544)
+  const windowOnly = { error: { code: 429, details: [{
+    '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+    reason: 'QUOTA_EXHAUSTED',
+    metadata: { quotaResetTimeStamp: '2025-10-20T20:00:00Z' },
+  }] } }
+  assert.equal(read(windowOnly), Date.parse('2025-10-20T20:00:00Z'))
+  // Streaming errors arrive wrapped in an array.
+  assert.equal(read([windowOnly]), Date.parse('2025-10-20T20:00:00Z'))
+  assert.equal(read([{ error: { code: 429, details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '30s' }] } }]), now + 30_000)
+  assert.equal(read({ error: { code: 429, message: 'Quota exceeded. Please retry in 34.074824224s.' } }), now + 34_074.824224)
+  assert.equal(read('quota limited'), undefined)
+  assert.equal(read({ error: { code: 429, details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } }), undefined)
+})
+
+test('Antigravity carries the disclosed reset onto the rate-limit error', async () => {
+  const { tokens } = accountTokens()
+  const adapter = new AntigravityAdapter({
+    tokens, models: [], discovery: false, streamIdleTimeoutMs: 1000, runtime,
+    fetchFn: async () => Response.json({ error: { code: 429, details: [
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '30s' },
+    ] } }, { status: 429 }),
+  })
+  await assert.rejects(async () => {
+    for await (const _chunk of adapter.streamAccount(options([]), 'alice')) { /* drain */ }
+  }, (error: unknown) => {
+    assert.ok(error instanceof LlmError && error.code === 'RATE_LIMIT')
+    const wait = error.failure.providerRetryAfterMs
+    // The disclosed 30s plus the shared 2s reset grace.
+    assert.ok(wait !== undefined && wait > 29_000 && wait <= 32_000, `waits out the disclosed delay (${String(wait)})`)
+    return true
+  })
 })
 
 test('Antigravity reports a 429 without a reset instant through onWarn', async () => {

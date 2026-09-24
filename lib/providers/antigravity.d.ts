@@ -12,7 +12,7 @@ import type { AntigravityRequest } from '../translate/antigravity.js';
 import type { CatalogPersistence, DiscoveredModel, FetchFn, ModelEntry, ProviderUsage } from './common.js';
 import { AccountTokenManager } from './accounts.js';
 import type { PoolAdapter } from './pool.js';
-import type { RateLimitWait } from './rate-limit.js';
+import type { RateLimitResetReader, RateLimitWait } from './rate-limit.js';
 export declare const ANTIGRAVITY_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export declare const ANTIGRAVITY_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export declare const ANTIGRAVITY_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -20,6 +20,12 @@ export declare const ANTIGRAVITY_DEFAULT_BASE_URL = "https://daily-cloudcode-pa.
 export declare const ANTIGRAVITY_PROD_BASE_URL = "https://cloudcode-pa.googleapis.com";
 export declare const ANTIGRAVITY_DEFAULT_USER_AGENT = "antigravity/1.104.0 dsh-plugin-subscriptions";
 export declare const ANTIGRAVITY_PREEMPT_MS: number;
+/**
+ * Reads the reset instant of the Antigravity quota that rejected a request:
+ * the structured error details first, then the "Please retry in 34.07s" hint
+ * Google puts in the message when the details are absent.
+ */
+export declare const antigravityRateLimitReset: RateLimitResetReader;
 /** Antigravity, not Gemini CLI, OAuth scopes from the local reference clients. */
 export declare const ANTIGRAVITY_SCOPES: readonly ["openid", "https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/cclog", "https://www.googleapis.com/auth/experimentsandconfigs"];
 /** OAuth client configuration; explicit clients override the bundled desktop identity. */
@@ -100,7 +106,7 @@ export declare class AntigravityAdapter extends LlmAdapter {
     /** Pool seam: stream through one specific account instead of the default. */
     streamAccount(options: GenerateOptions, account: string): AsyncIterable<StreamChunk>;
     private streamCore;
-    /** Report a 429 without a recognizable reset instant, like the other adapters. */
+    /** Rate-limit reset reading and the diagnostic for a 429 without one, like the other adapters. */
     private errorOptions;
     /** Non-stream forwarding seam used by tests and future DSH complete calls. */
     generate(options: GenerateOptions): Promise<StreamChunk[]>;

@@ -48,8 +48,16 @@ import { proxiedFetch } from '../http.js'
 import { ANTIGRAVITY_DEFAULT_CLIENT_ID, ANTIGRAVITY_DEFAULT_CLIENT_SECRET } from './antigravity-oauth-client.js'
 import { AccountTokenManager, DISCOVERY_TIMEOUT_MS, unionAccountCatalogs } from './accounts.js'
 import type { PoolAdapter } from './pool.js'
-import { DEFAULT_RATE_LIMIT_WAIT, DEFAULT_RETRY, resetInstantFromDate, subscriptionRetryPolicy } from './rate-limit.js'
-import type { RateLimitWait } from './rate-limit.js'
+import {
+  DEFAULT_RATE_LIMIT_WAIT,
+  DEFAULT_RETRY,
+  durationMs,
+  jsonBody,
+  resetFromFields,
+  resetInstantFromDate,
+  subscriptionRetryPolicy,
+} from './rate-limit.js'
+import type { RateLimitResetReader, RateLimitWait } from './rate-limit.js'
 
 export const ANTIGRAVITY_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const ANTIGRAVITY_TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -62,6 +70,30 @@ const ANTIGRAVITY_CALLBACK_PATH = '/oauth-callback'
 const ANTIGRAVITY_CONTEXT_WINDOW = 1_024_000
 // Fallback only when discovery is unavailable or the model omits its output cap.
 const ANTIGRAVITY_DEFAULT_MAX_TOKENS = 32_768
+
+/**
+ * Reset keys of the Cloud Code 429 envelope (`google.rpc.Status`): the
+ * `ErrorInfo` metadata names the quota window (`quotaResetTimeStamp`,
+ * `quotaResetDelay`), `RetryInfo.retryDelay` the suggested backoff. Shapes
+ * follow Gemini CLI's handling of the same backend (googleQuotaErrors.ts).
+ */
+const ANTIGRAVITY_RESET_FIELDS = ['quotaResetTimeStamp', 'quotaResetDelay', 'retryDelay'] as const
+// [ { error: { details: [ { metadata: { quotaResetDelay } } ] } } ]: a streamed
+// error nests the metadata keys six levels down.
+const ANTIGRAVITY_RESET_DEPTH = 6
+
+/**
+ * Reads the reset instant of the Antigravity quota that rejected a request:
+ * the structured error details first, then the "Please retry in 34.07s" hint
+ * Google puts in the message when the details are absent.
+ */
+export const antigravityRateLimitReset: RateLimitResetReader = (_response, body, now) => {
+  const structured = resetFromFields(jsonBody(body), ANTIGRAVITY_RESET_FIELDS, now, ANTIGRAVITY_RESET_DEPTH)
+  if (structured !== undefined) return structured
+  const hint = /Please retry in (\d+(?:\.\d+)?(?:ms|s))\b/.exec(body)?.[1]
+  const delay = hint === undefined ? undefined : durationMs(hint)
+  return delay === undefined ? undefined : now + delay
+}
 
 /** Antigravity, not Gemini CLI, OAuth scopes from the local reference clients. */
 export const ANTIGRAVITY_SCOPES = [
@@ -649,9 +681,12 @@ export class AntigravityAdapter extends LlmAdapter {
     })
   }
 
-  /** Report a 429 without a recognizable reset instant, like the other adapters. */
+  /** Rate-limit reset reading and the diagnostic for a 429 without one, like the other adapters. */
   private errorOptions(): HttpLlmErrorOptions {
-    return this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn }
+    return {
+      rateLimitReset: antigravityRateLimitReset,
+      ...this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
+    }
   }
 
   /** Non-stream forwarding seam used by tests and future DSH complete calls. */

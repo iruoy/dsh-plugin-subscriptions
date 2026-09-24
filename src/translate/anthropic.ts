@@ -19,7 +19,7 @@ import type {
 import { parseSse, parseSseJson } from './sse.js'
 import { closeBlock } from './blocks.js'
 import type { OpenBlock } from './blocks.js'
-import { toolResultText, withToolResultBlocks } from './resolved.js'
+import { toolResultText } from './resolved.js'
 import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
 
 /**
@@ -141,9 +141,8 @@ function conversationStart(messages: readonly TranslatableMessage[]): number {
  */
 export function toAnthropicMessages(messages: readonly TranslatableMessage[]): AnthropicMessage[] {
   const out: AnthropicMessage[] = []
-  const normalized = withToolResultBlocks(messages)
-  const start = conversationStart(normalized)
-  for (const [index, message] of normalized.entries()) {
+  const start = conversationStart(messages)
+  for (const [index, message] of messages.entries()) {
     // A leading system message is an opening instruction; toAnthropicSystem
     // owns those. A later one rides here so the cached prefix ahead of it
     // stays byte-identical.

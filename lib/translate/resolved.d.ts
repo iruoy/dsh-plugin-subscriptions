@@ -28,14 +28,24 @@ export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'
  * together.
  */
 export declare function toolResultText(block: ResolvedToolResultBlock): string;
+/** A resolved message before the tool-role fold: DSH 0.1.7 first-class tool results included. */
+export interface ToolRoleMessage extends Omit<TranslatableMessage, 'role'> {
+    role: TranslatableMessage['role'] | 'tool';
+    /** First-class tool result correlation in current harness messages. */
+    toolCallId?: string;
+    /** Chat Completions correlation in imported histories. */
+    tool_call_id?: string;
+    isError?: boolean;
+}
 /**
  * Fold first-class `role: 'tool'` messages (DSH 0.1.7) into the user-role
  * `tool-result` block every translator already speaks, so each wire handles
  * one tool-result shape and keeps its correlation id and error flag.
+ * {@link resolveImages} applies it, so translators never see a tool role.
  * @param messages - ordered conversation messages.
  * @returns the same messages, with tool-role ones rewritten as user tool results.
  */
-export declare function withToolResultBlocks(messages: readonly TranslatableMessage[]): readonly TranslatableMessage[];
+export declare function withToolResultBlocks(messages: readonly ToolRoleMessage[]): readonly TranslatableMessage[];
 /**
  * Wires with text-only tool outputs receive images in a following user turn.
  * Defer that turn until all consecutive user messages have been processed:
@@ -43,15 +53,10 @@ export declare function withToolResultBlocks(messages: readonly TranslatableMess
  * image message must not interrupt their tool-call/output pairing.
  */
 export declare function withToolResultImages(messages: readonly TranslatableMessage[]): TranslatableMessage[];
-/** Translator input message: role plus resolved blocks. */
+/** Translator input message: role plus resolved blocks, tool results folded into user turns. */
 export interface TranslatableMessage {
-    role: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
+    role: 'system' | 'developer' | 'user' | 'assistant';
     content: readonly TranslatableBlock[];
-    /** First-class tool result correlation in current harness messages. */
-    toolCallId?: string;
-    /** Chat Completions correlation in imported histories. */
-    tool_call_id?: string;
-    isError?: boolean;
     /** Preserved for adapters whose provider-private replay metadata is required. */
     source?: Message['source'];
 }
@@ -65,13 +70,15 @@ export declare function hasImages(messages: readonly {
     content: readonly (ContentBlock | TranslatableBlock)[];
 }[]): boolean;
 /**
- * Resolve every ImageBlock's attachment reference to inline base64 bytes.
- * Messages without images pass through unchanged. A request carrying an image
+ * Resolve every ImageBlock's attachment reference to inline base64 bytes and
+ * fold tool-role messages ({@link withToolResultBlocks}): the one step between
+ * harness messages and the translators. Messages without images or tool roles
+ * pass through unchanged. A request carrying an image
  * with no attachment service available fails loudly rather than silently
  * dropping the image.
  * @param messages - the request's conversation messages.
  * @param attachments - the deployment's attachment service, when mounted.
  * @param signal - cancellation for the storage reads.
- * @returns the same messages with image blocks resolved for the translators.
+ * @returns the same messages, resolved and folded for the translators.
  */
 export declare function resolveImages(messages: readonly Message[], attachments: AttachmentStore | undefined, signal?: AbortSignal): Promise<readonly TranslatableMessage[]>;

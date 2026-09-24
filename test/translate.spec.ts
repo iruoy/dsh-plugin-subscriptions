@@ -24,7 +24,7 @@ import {
   toAnthropicTools,
 } from '../src/translate/anthropic.js'
 import type { AnthropicMessage, AnthropicStreamEvent } from '../src/translate/anthropic.js'
-import { resolveImages, type TranslatableMessage } from '../src/translate/resolved.js'
+import { resolveImages, withToolResultBlocks, type ToolRoleMessage, type TranslatableMessage } from '../src/translate/resolved.js'
 import { toChatMessages } from '../src/translate/chat-completions.js'
 
 let messageCounter = 0
@@ -81,15 +81,15 @@ test('toResponsesInput: text, tool call, and tool result round trip', () => {
 })
 
 test('toResponsesInput: first-class tool-role messages become function outputs', () => {
-  const result: TranslatableMessage = {
+  const result: ToolRoleMessage = {
     role: 'tool',
     toolCallId: 'call-current',
     content: [{ type: 'text', text: 'current result' }],
   }
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [toolCall('call-current', 'bash', '{}')]),
     result,
-  ]
+  ])
   const { input } = toResponsesInput(messages)
   assert.deepEqual(input, [
     { type: 'function_call', call_id: 'call-current', name: 'bash', arguments: '{}' },
@@ -104,11 +104,11 @@ test('toResponsesInput: first-class tool-role messages become function outputs',
 })
 
 test('first-class parallel tool results preserve Claude error flags and call order', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [toolCall('first', 'bash', '{}'), toolCall('second', 'bash', '{}')]),
     { role: 'tool', toolCallId: 'first', isError: true, content: [{ type: 'text', text: 'failed' }] },
     { role: 'tool', toolCallId: 'second', isError: false, content: [{ type: 'text', text: 'done' }] },
-  ]
+  ])
   assert.deepEqual(toAnthropicMessages(messages)[1], {
     role: 'user',
     content: [
@@ -132,25 +132,25 @@ test('developer messages from DSH 0.1.7 are not attributed to the assistant', ()
 })
 
 test('toResponsesInput: first-class tool images follow the function output', () => {
-  const input = toResponsesInput([{
+  const input = toResponsesInput(withToolResultBlocks([{
     role: 'tool',
     toolCallId: 'call-image',
     content: [
       { type: 'text', text: 'caption' },
       { type: 'image', mediaType: 'image/png', dataBase64: 'aGk=' },
     ],
-  }]).input
+  }])).input
   assert.deepEqual(input.map(item => item.type), ['function_call_output', 'message'])
   assert.equal(input[0].output, 'caption')
   assert.equal((input[1].content as Record<string, unknown>[])[1].type, 'input_image')
 })
 
 test('tool-role messages correlate through tool_call_id or a tool source', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [toolCall('imported', 'bash', '{}'), toolCall('sourced', 'bash', '{}')]),
     { role: 'tool', tool_call_id: 'imported', content: [{ type: 'image', mediaType: 'image/png', dataBase64: 'aGk=' }] },
     { role: 'tool', source: { kind: 'tool', callId: ToolCallId('sourced') }, content: [{ type: 'text', text: 'ok' }] },
-  ]
+  ])
   const { input } = toResponsesInput(messages)
   assert.deepEqual(input.slice(2, 4), [
     { type: 'function_call_output', call_id: 'imported', output: '' },
@@ -160,15 +160,15 @@ test('tool-role messages correlate through tool_call_id or a tool source', () =>
 })
 
 test('an empty toolCallId falls back to the other correlation ids', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [toolCall('fallback', 'bash', '{}')]),
     { role: 'tool', toolCallId: '', tool_call_id: 'fallback', content: [{ type: 'text', text: 'ok' }] },
-  ]
+  ])
   assert.deepEqual(toResponsesInput(messages).input[1], { type: 'function_call_output', call_id: 'fallback', output: 'ok' })
 })
 
 test('text-only tool outputs keep separate text blocks on separate lines', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [toolCall('shot', 'screenshot', '{}')]),
     {
       role: 'tool',
@@ -179,13 +179,13 @@ test('text-only tool outputs keep separate text blocks on separate lines', () =>
         { type: 'text', text: 'Image reference (for image_generate.referenceImages): {}' },
       ],
     },
-  ]
+  ])
   const output = 'saved screenshot\nImage reference (for image_generate.referenceImages): {}'
   assert.equal(toResponsesInput(messages).input[1].output, output)
   assert.equal(toChatMessages(messages)[1].content, output)
 })
 
-test('resolveImages preserves first-class tool call ids', async () => {
+test('resolveImages folds first-class tool results, keeping their call ids', async () => {
   const ref = { attachmentId: 'image-1', mediaType: 'image/png', bytes: 2, width: 1, height: 1 }
   const result = {
     role: 'tool',
@@ -195,7 +195,8 @@ test('resolveImages preserves first-class tool call ids', async () => {
   const resolved = await resolveImages([result], {
     readImage: async () => ({ ref, data: new Uint8Array([104, 105]) }),
   } as never)
-  assert.equal(resolved[0].toolCallId, 'call-image')
+  assert.equal(resolved[0].role, 'user')
+  assert.deepEqual(resolved[0].content.map(block => block.type === 'tool-result' && String(block.toolCallId)), ['call-image'])
   assert.equal(toResponsesInput(resolved).input[0].call_id, 'call-image')
 })
 

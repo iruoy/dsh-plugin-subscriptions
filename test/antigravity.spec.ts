@@ -26,6 +26,7 @@ import {
   streamAntigravity,
   toAntigravityRequest,
 } from '../src/translate/antigravity.js'
+import { withToolResultBlocks } from '../src/translate/resolved.js'
 import type { TranslatableMessage } from '../src/translate/resolved.js'
 
 const oauth = { clientId: 'test-client.apps.example.invalid', clientSecret: 'test-secret' }
@@ -223,10 +224,10 @@ test('request conversion carries system, images, tools, tool results, and signed
 })
 
 test('first-class harness tool messages become correlated function responses', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [{ type: 'tool-call', id: ToolCallId('current-call'), name: 'bash', arguments: '{}' }]),
     { role: 'tool', toolCallId: 'current-call', content: [{ type: 'text', text: 'done' }] },
-  ]
+  ])
   const parts = toAntigravityRequest(options([]), messages, 'project-123').request.contents.flatMap(entry => entry.parts)
   assert.deepEqual(parts[1].functionResponse, {
     id: 'current-call', name: 'bash', response: { output: 'done' },
@@ -234,10 +235,10 @@ test('first-class harness tool messages become correlated function responses', (
 })
 
 test('first-class harness tool errors keep their error flag', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [{ type: 'tool-call', id: ToolCallId('failed-call'), name: 'bash', arguments: '{}' }]),
     { role: 'tool', toolCallId: 'failed-call', isError: true, content: [{ type: 'text', text: 'boom' }] },
-  ]
+  ])
   const parts = toAntigravityRequest(options([]), messages, 'project-123').request.contents.flatMap(entry => entry.parts)
   assert.deepEqual(parts[1].functionResponse, {
     id: 'failed-call', name: 'bash', response: { output: 'boom', isError: true },
@@ -245,10 +246,10 @@ test('first-class harness tool errors keep their error flag', () => {
 })
 
 test('tool errors with JSON output keep their error flag', () => {
-  const messages: TranslatableMessage[] = [
+  const messages = withToolResultBlocks([
     message('assistant', [{ type: 'tool-call', id: ToolCallId('json-call'), name: 'bash', arguments: '{}' }]),
     { role: 'tool', toolCallId: 'json-call', isError: true, content: [{ type: 'text', text: '{"error":"ENOENT"}' }] },
-  ]
+  ])
   const parts = toAntigravityRequest(options([]), messages, 'project-123').request.contents.flatMap(entry => entry.parts)
   assert.deepEqual(parts[1].functionResponse, {
     id: 'json-call', name: 'bash', response: { error: 'ENOENT', isError: true },

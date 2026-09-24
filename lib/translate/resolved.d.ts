@@ -56,6 +56,13 @@ export interface TranslatableMessage {
     source?: Message['source'];
 }
 /**
+ * Whether any message carries an image, including one nested in a tool result
+ * (withToolResultImages moves those onto the wire too).
+ * @param messages - conversation messages, resolved or not.
+ * @returns true when at least one image block is present.
+ */
+export declare function hasImages(messages: readonly TranslatableMessage[]): boolean;
+/**
  * Resolve every ImageBlock's attachment reference to inline base64 bytes.
  * Messages without images pass through unchanged. A request carrying an image
  * with no attachment service available fails loudly rather than silently

@@ -109,6 +109,19 @@ export interface TranslatableMessage {
   source?: Message['source']
 }
 
+const hasImage = (block: TranslatableBlock): boolean => block.type === 'image'
+  || (block.type === 'tool-result' && block.content.some(hasImage))
+
+/**
+ * Whether any message carries an image, including one nested in a tool result
+ * (withToolResultImages moves those onto the wire too).
+ * @param messages - conversation messages, resolved or not.
+ * @returns true when at least one image block is present.
+ */
+export function hasImages(messages: readonly TranslatableMessage[]): boolean {
+  return messages.some(message => message.content.some(hasImage))
+}
+
 /**
  * Resolve every ImageBlock's attachment reference to inline base64 bytes.
  * Messages without images pass through unchanged. A request carrying an image
@@ -124,11 +137,7 @@ export async function resolveImages(
   attachments: AttachmentStore | undefined,
   signal?: AbortSignal,
 ): Promise<readonly TranslatableMessage[]> {
-  const hasImage = (block: ContentBlock): boolean => block.type === 'image'
-    || (block.type === 'tool-result' && block.content.some(hasImage))
-  if (!messages.some(message => message.content.some(hasImage))) {
-    return messages
-  }
+  if (!hasImages(messages)) return messages
   if (attachments === undefined) {
     throw new LlmError(
       'dsh-plugin-subscriptions: the request carries an image but no attachments service is mounted; '

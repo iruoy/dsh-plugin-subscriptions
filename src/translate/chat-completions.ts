@@ -13,7 +13,7 @@ import type {
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
-import { parseSse } from './sse.js'
+import { parseSse, parseSseJson } from './sse.js'
 import { closeBlock } from './blocks.js'
 import type { OpenBlock } from './blocks.js'
 import { toolResultText, withToolResultImages } from './resolved.js'
@@ -379,12 +379,7 @@ export async function* streamChatCompletions(
       yield* translator.flush()
       return
     }
-    let event: ChatCompletionsStreamEvent
-    try {
-      event = JSON.parse(sseEvent.data) as ChatCompletionsStreamEvent
-    } catch {
-      throw new LlmError(`malformed SSE payload: ${sseEvent.data.slice(0, 120)}`, 'MALFORMED_RESPONSE')
-    }
+    const event = parseSseJson<ChatCompletionsStreamEvent>(sseEvent)
     yield* translator.push(event)
     if (translator.terminated) return
   }

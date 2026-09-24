@@ -16,7 +16,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
 import { toolResultText, withToolResultImages } from './resolved.js'
-import { parseSse } from './sse.js'
+import { parseSse, parseSseJson } from './sse.js'
 import { antigravityThinking } from './antigravity-thinking.js'
 import { antigravityToolParameters } from './antigravity-schema.js'
 
@@ -404,12 +404,7 @@ export async function* streamAntigravity(
   const translator = new AntigravityStreamTranslator()
   for await (const event of parseSse(stream, onActivity)) {
     if (event.data === '[DONE]') break
-    let parsed: AntigravityResponseEvent
-    try {
-      parsed = JSON.parse(event.data) as AntigravityResponseEvent
-    } catch {
-      throw new LlmError(`malformed Antigravity SSE payload: ${event.data.slice(0, 120)}`, 'MALFORMED_RESPONSE')
-    }
+    const parsed = parseSseJson<AntigravityResponseEvent>(event, 'Antigravity')
     yield* translator.push(parsed)
     if (translator.terminated) return
   }

@@ -19,7 +19,7 @@ import type {
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
-import { parseSse } from './sse.js'
+import { parseSse, parseSseJson } from './sse.js'
 import { closeBlock } from './blocks.js'
 import type { OpenBlock } from './blocks.js'
 import { toolResultText, withToolResultImages } from './resolved.js'
@@ -464,12 +464,7 @@ export async function* streamResponses(
 ): AsyncGenerator<StreamChunk> {
   const translator = new ResponsesStreamTranslator()
   for await (const sseEvent of parseSse(stream, onActivity)) {
-    let event: ResponsesStreamEvent
-    try {
-      event = JSON.parse(sseEvent.data) as ResponsesStreamEvent
-    } catch {
-      throw new LlmError(`malformed SSE payload: ${sseEvent.data.slice(0, 120)}`, 'MALFORMED_RESPONSE')
-    }
+    let event = parseSseJson<ResponsesStreamEvent>(sseEvent)
     if (transform !== undefined) event = transform(event)
     yield* translator.push(event)
     if (translator.terminated) return

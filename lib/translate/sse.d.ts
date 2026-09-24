@@ -19,3 +19,11 @@ export interface SseEvent {
  * @returns events in arrival order.
  */
 export declare function parseSse(stream: ReadableStream<Uint8Array>, onActivity?: () => void): AsyncGenerator<SseEvent>;
+/**
+ * Parse one SSE event's JSON payload.
+ * @param event - the parsed SSE event.
+ * @param label - provider name for the error message, when the wire names one.
+ * @returns the decoded payload.
+ * @throws LlmError MALFORMED_RESPONSE when the payload is not JSON.
+ */
+export declare function parseSseJson<T>(event: SseEvent, label?: string): T;

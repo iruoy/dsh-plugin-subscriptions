@@ -6,6 +6,8 @@
  * spec-strict framing the harness's own adapters use.
  */
 
+import { LlmError } from '@deepseek-ai/dsh-llm'
+
 /** One parsed SSE event. */
 export interface SseEvent {
   /** Joined `data:` lines of the event. */
@@ -58,5 +60,21 @@ export async function* parseSse(
     }
   } finally {
     reader.releaseLock()
+  }
+}
+
+/**
+ * Parse one SSE event's JSON payload.
+ * @param event - the parsed SSE event.
+ * @param label - provider name for the error message, when the wire names one.
+ * @returns the decoded payload.
+ * @throws LlmError MALFORMED_RESPONSE when the payload is not JSON.
+ */
+export function parseSseJson<T>(event: SseEvent, label?: string): T {
+  try {
+    return JSON.parse(event.data) as T
+  } catch {
+    const source = label === undefined ? 'SSE' : `${label} SSE`
+    throw new LlmError(`malformed ${source} payload: ${event.data.slice(0, 120)}`, 'MALFORMED_RESPONSE')
   }
 }

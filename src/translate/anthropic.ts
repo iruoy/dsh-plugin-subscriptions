@@ -16,7 +16,7 @@ import type {
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
-import { parseSse } from './sse.js'
+import { parseSse, parseSseJson } from './sse.js'
 import { closeBlock } from './blocks.js'
 import type { OpenBlock } from './blocks.js'
 import { toolResultText, withToolResultBlocks } from './resolved.js'
@@ -516,12 +516,7 @@ export async function* streamAnthropic(
 ): AsyncGenerator<StreamChunk> {
   const translator = new AnthropicStreamTranslator()
   for await (const sseEvent of parseSse(stream, onActivity)) {
-    let event: AnthropicStreamEvent
-    try {
-      event = JSON.parse(sseEvent.data) as AnthropicStreamEvent
-    } catch {
-      throw new LlmError(`malformed SSE payload: ${sseEvent.data.slice(0, 120)}`, 'MALFORMED_RESPONSE')
-    }
+    const event = parseSseJson<AnthropicStreamEvent>(sseEvent)
     yield* translator.push(event)
     if (translator.terminated) return
   }

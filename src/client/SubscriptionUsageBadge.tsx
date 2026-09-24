@@ -27,7 +27,7 @@ import { createPortal } from 'react-dom'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { IconDataOutline16, useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
-import { callSubscriptionsAuth, usageBarColor } from './SubscriptionsSection.js'
+import { callSubscriptionsAuth, usageBarColor, usageWindowLabel } from './SubscriptionsSection.js'
 import type { AccountStatus, ProviderStatus, ProviderUsage, SubscriptionProvider, UsageWindow } from './SubscriptionsSection.js'
 import type { ModelDirectoriesLike } from './SpeedSelect.js'
 import { en } from './locales.js'
@@ -213,14 +213,6 @@ function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknow
 }
 
 type Translate = (key: SubscriptionsKey, params?: Record<string, unknown>) => string
-
-/** Localized label of one usage window (kind, plus the model scope when named). */
-function usageWindowLabel(t: Translate, window: UsageWindow): string {
-  const base = window.kind === 'session'
-    ? t('usageSession')
-    : window.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')
-  return window.scope !== undefined && window.scope !== '' ? `${base} · ${window.scope}` : base
-}
 
 /**
  * The composer subscription-usage badge: a pill reading e.g.

@@ -305,7 +305,7 @@ function statusText(t: SubscriptionsSectionInjected['t'], status: ProviderStatus
  * @param window - the reported window.
  * @returns e.g. "5-hour window" or "Weekly · Opus".
  */
-function usageWindowLabel(t: SubscriptionsSectionInjected['t'], window: UsageWindow): string {
+export function usageWindowLabel(t: SubscriptionsSectionInjected['t'], window: UsageWindow): string {
   const base = window.kind === 'session'
     ? t('usageSession')
     : window.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')

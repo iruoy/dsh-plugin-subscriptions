@@ -76,6 +76,13 @@ export interface SubscriptionsSectionInjected {
  * renderer erases the share boundary at the render call).
  */
 export type SubscriptionsSectionProps = Partial<SubscriptionsSectionInjected>;
+/**
+ * Localized label of one usage window (kind, plus the model scope when named).
+ * @param t - section translate.
+ * @param window - the reported window.
+ * @returns e.g. "5-hour window" or "Weekly · Opus".
+ */
+export declare function usageWindowLabel(t: SubscriptionsSectionInjected['t'], window: UsageWindow): string;
 /** Bar fill color: success normally, warn from 80%, error from 95%. Shared with the composer badge. */
 export declare function usageBarColor(usedPercent: number): string;
 /** What one provider's collapsible default-effort section renders. */

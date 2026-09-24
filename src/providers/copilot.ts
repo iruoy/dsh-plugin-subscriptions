@@ -28,6 +28,7 @@ import type { ProviderId } from '../auth/store.js'
 import type { PoolAdapter } from './pool.js'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { resolveImages } from '../translate/resolved.js'
+import type { TranslatableBlock } from '../translate/resolved.js'
 import {
   streamChatCompletions,
   toChatMessages,
@@ -1010,7 +1011,11 @@ export class CopilotAdapter extends LlmAdapter {
     replayScopeKey: string,
   ): Promise<Response> {
     const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), signal)
-    const hasVision = messages.some(message => message.content.some(block => block.type === 'image'))
+    // Tool-result images reach the wire too (withToolResultImages moves them
+    // into a user turn), so they need the vision header as well.
+    const isImage = (block: TranslatableBlock): boolean => block.type === 'image'
+      || (block.type === 'tool-result' && block.content.some(isImage))
+    const hasVision = messages.some(message => message.content.some(isImage))
     const body = wire === 'responses'
       ? copilotResponsesRequestBody(options, toResponsesInput(
         messages,

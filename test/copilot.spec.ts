@@ -454,17 +454,17 @@ function memoryTokens(initial: CopilotSession): AccountTokenManager<CopilotSessi
  * answers one request in call order; request url + parsed body are recorded.
  */
 function recordingSseFetch(queuedResponses: string[]): {
-  calls: { url: string; body: Record<string, unknown> }[]
+  calls: { url: string; headers: Headers; body: Record<string, unknown> }[]
   restore(): void
 } {
   const original = globalThis.fetch
-  const calls: { url: string; body: Record<string, unknown> }[] = []
+  const calls: { url: string; headers: Headers; body: Record<string, unknown> }[] = []
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === VSCODE_RELEASES_URL) {
       return Promise.resolve(new Response(JSON.stringify(['1.9.9']), { status: 200 }))
     }
-    calls.push({ url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+    calls.push({ url, headers: new Headers(init?.headers), body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
     const payload = queuedResponses.shift()
     if (payload === undefined) return Promise.reject(new Error(`unexpected fetch to ${url}`))
     return Promise.resolve(new Response(payload))
@@ -512,6 +512,43 @@ test('a configured wire routes the request even without discovery', async () => 
     assert.equal(calls.length, 1)
     assert.equal(calls[0]?.url, COPILOT_RESPONSES_URL)
     assert.equal(calls[0]?.body.model, 'gpt-5.6-sol')
+  } finally {
+    restore()
+  }
+})
+
+test('a tool-result image sends the vision header', async () => {
+  // Older DSH lines nest tool-output images inside a user tool-result block;
+  // the translator still sends them, so Copilot must see the vision header.
+  const { calls, restore } = recordingSseFetch([COMPLETED_SSE])
+  try {
+    const ref = { attachmentId: 'shot-1', mediaType: 'image/png', bytes: 2, width: 1, height: 1 }
+    const adapter = new CopilotAdapter({
+      models: [{ id: 'gpt-5.6-sol', wire: 'responses' }],
+      streamIdleTimeoutMs: 1000,
+      tokens: memoryTokens(copilotSession),
+      discovery: false,
+      resolveAttachments: () => ({ readImage: async () => ({ ref, data: new Uint8Array([104, 105]) }) }) as never,
+    })
+    const messages: GenerateOptions['messages'] = [
+      ...STREAM_OPTIONS.messages,
+      {
+        id: MessageId('m-call'),
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: ToolCallId('shot'), name: 'screenshot', arguments: '{}' }],
+        source: { kind: 'assistant' },
+      },
+      {
+        id: MessageId('m-result'),
+        role: 'user',
+        content: [{ type: 'tool-result', toolCallId: ToolCallId('shot'), content: [{ type: 'image', attachment: ref }] }],
+        source: { kind: 'user' },
+      },
+    ] as never
+    for await (const chunk of adapter.stream({ ...STREAM_OPTIONS, messages })) {
+      void chunk
+    }
+    assert.equal(calls[0]?.headers.get('copilot-vision-request'), 'true')
   } finally {
     restore()
   }

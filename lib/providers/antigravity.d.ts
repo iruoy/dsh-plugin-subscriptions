@@ -100,6 +100,8 @@ export declare class AntigravityAdapter extends LlmAdapter {
     /** Pool seam: stream through one specific account instead of the default. */
     streamAccount(options: GenerateOptions, account: string): AsyncIterable<StreamChunk>;
     private streamCore;
+    /** Report a 429 without a recognizable reset instant, like the other adapters. */
+    private errorOptions;
     /** Non-stream forwarding seam used by tests and future DSH complete calls. */
     generate(options: GenerateOptions): Promise<StreamChunk[]>;
 }

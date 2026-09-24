@@ -384,6 +384,21 @@ test('Antigravity resolves per-model output defaults and bounds configured defau
   assert.equal((await configured.resolveOwnModel('antigravity', 'gpt-oss-120b-medium', 'alice')).defaultMaxTokens, 32768)
 })
 
+test('Antigravity reports a 429 without a reset instant through onWarn', async () => {
+  const { tokens } = accountTokens()
+  const warnings: string[] = []
+  const adapter = new AntigravityAdapter({
+    tokens, models: [], discovery: false, streamIdleTimeoutMs: 1000, runtime,
+    fetchFn: async () => new Response('quota limited', { status: 429 }),
+    onWarn: message => { warnings.push(message) },
+  })
+  await assert.rejects(async () => {
+    for await (const _chunk of adapter.streamAccount(options([]), 'alice')) { /* drain */ }
+  })
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /^Antigravity API: /)
+})
+
 test('Antigravity output defaults remain account-scoped', async () => {
   const { tokens } = accountTokens()
   const adapter = new AntigravityAdapter({

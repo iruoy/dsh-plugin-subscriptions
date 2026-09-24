@@ -39,6 +39,7 @@ import type {
   CatalogPersistence,
   DiscoveredModel,
   FetchFn,
+  HttpLlmErrorOptions,
   ModelEntry,
   ProviderUsage,
   UsageWindow,
@@ -643,8 +644,14 @@ export class AntigravityAdapter extends LlmAdapter {
         signal,
       ),
       onUnauthorized: () => { this.clearAccountCatalog(account) },
+      errors: this.errorOptions(),
       parse: (body, pulse) => streamAntigravity(body, pulse),
     })
+  }
+
+  /** Report a 429 without a recognizable reset instant, like the other adapters. */
+  private errorOptions(): HttpLlmErrorOptions {
+    return this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn }
   }
 
   /** Non-stream forwarding seam used by tests and future DSH complete calls. */
@@ -659,7 +666,7 @@ export class AntigravityAdapter extends LlmAdapter {
       this.options.fetchFn,
       options.signal,
     )
-    if (!response.ok) throw await httpLlmError(response, 'Antigravity API')
+    if (!response.ok) throw await httpLlmError(response, 'Antigravity API', this.errorOptions())
     return parseAntigravityResponse(await response.json() as AntigravityResponseEvent)
   }
 }

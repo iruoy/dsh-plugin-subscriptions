@@ -37,8 +37,6 @@ export declare const codexRateLimitReset: RateLimitResetReader;
  * `additional_speed_tiers` entry "fast".
  */
 export declare const CODEX_FAST_SERVICE_TIER = "priority";
-/** One session's speed choice: standard routing or the fast (priority) tier. */
-export type CodexSpeedTier = 'standard' | 'fast';
 /** Static codex flow facts for the OAuth flow engine. */
 export declare const codexFlow: FlowSpec;
 /** User identity claims decoded from a codex id token. */

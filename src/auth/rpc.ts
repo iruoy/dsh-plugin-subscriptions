@@ -130,15 +130,6 @@ export interface ModelDefaultsCatalog {
   models: ModelDefaultView[]
 }
 
-/** Per-account catalog returned by providerSettings, including providers without usage APIs. */
-export interface ProviderAccountCatalog {
-  key: string
-  /** Original identity; the editable alias lives in settings.accounts[key].alias. */
-  label: string
-  models: { id: string; name: string }[]
-  unavailable?: boolean
-}
-
 /** Provider and account preference operations behind providerSettings/setProviderSettings. */
 export interface ProviderSettingsController {
   get(provider: ProviderId, force: boolean): Promise<unknown>

@@ -120,9 +120,6 @@ const CODEX_MODALITIES: readonly ('text' | 'image')[] = ['text', 'image']
 export const CODEX_FAST_SERVICE_TIER = 'priority'
 const CODEX_FAST_SPEED_TIER = 'fast'
 
-/** One session's speed choice: standard routing or the fast (priority) tier. */
-export type CodexSpeedTier = 'standard' | 'fast'
-
 /** Static codex flow facts for the OAuth flow engine. */
 export const codexFlow: FlowSpec = {
   callbackPath: CODEX_CALLBACK_PATH,

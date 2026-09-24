@@ -11,7 +11,6 @@ import './keep-alive.js'
 import { MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { CodexAdapter, codexRequestBody, fetchCodexModels } from '../src/providers/codex.js'
-import { toResponsesInput } from '../src/translate/responses.js'
 import { GrokAdapter } from '../src/providers/grok.js'
 import { ClaudeAdapter, claudeRequestBody, fetchClaudeModels } from '../src/providers/claude.js'
 import { CopilotAdapter, fetchCopilotModels } from '../src/providers/copilot.js'
@@ -25,8 +24,18 @@ const STATIC_CODEX = [{ id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' }]
 const STATIC_CLAUDE = [{ id: 'claude-opus-4-5', name: 'Claude Opus 4.5' }]
 const STATIC_GROK = [{ id: 'grok-4', name: 'Grok 4' }]
 
-test('Codex translates current harness tool messages into correlated Responses outputs', () => {
+test('Codex translates current harness tool messages into correlated Responses outputs', async (t) => {
+  const bodies: Record<string, unknown>[] = []
+  t.mock.method(globalThis, 'fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+    return new Response('data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}\n\ndata: [DONE]\n\n')
+  })
   const messages = [{
+    id: MessageId('tool-call'),
+    role: 'assistant',
+    source: { kind: 'assistant' },
+    content: [{ type: 'tool-call', id: 'call-current', name: 'bash', arguments: '{}' }],
+  } as unknown as Message, {
     id: MessageId('tool-message'),
     role: 'tool',
     toolCallId: 'call-current',
@@ -34,9 +43,10 @@ test('Codex translates current harness tool messages into correlated Responses o
     content: [{ type: 'text', text: 'done' }],
     isError: false,
   } as unknown as Message]
-  assert.deepEqual(toResponsesInput(messages).input, [
-    { type: 'function_call_output', call_id: 'call-current', output: 'done' },
-  ])
+  const adapter = codexAdapter({ session: codexSession, discovery: false })
+  for await (const chunk of adapter.stream({ provider: 'codex', model: 'gpt-5.1-codex', messages })) void chunk
+  const input = bodies[0]?.input as Record<string, unknown>[]
+  assert.deepEqual(input.at(-1), { type: 'function_call_output', call_id: 'call-current', output: 'done' })
 })
 
 test('Codex context overrides clamp per account, restore defaults, and distrust missing maxima', async () => {

@@ -128,7 +128,7 @@ npm 安装的:
 dsh plugin --profile web update --latest dsh-plugin-subscriptions
 ```
 
-GitHub 安装的:重新执行一遍 `add github:V1ki/dsh-plugin-subscriptions` —— 会重新拉取仓库(含已提交的构建产物)。link 的本地检出只需在检出目录里 `git pull && pnpm build`。
+GitHub 安装的:重新执行一遍 `add github:V1ki/dsh-plugin-subscriptions` —— 会重新拉取仓库(含已提交的构建产物)。link 的本地检出只需在检出目录里 `git pull`。
 
 无论哪种方式,更新后都要重启 `dsh web` 才会加载新版本。
 

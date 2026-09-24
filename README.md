@@ -129,7 +129,7 @@ Installed from npm:
 dsh plugin --profile web update --latest dsh-plugin-subscriptions
 ```
 
-Installed from GitHub: re-run the same `add github:V1ki/dsh-plugin-subscriptions` command — it re-fetches the repository, including the committed build. A linked local checkout just needs `git pull && pnpm build` in the checkout.
+Installed from GitHub: re-run the same `add github:V1ki/dsh-plugin-subscriptions` command — it re-fetches the repository, including the committed build. A linked local checkout just needs `git pull` in the checkout.
 
 Either way, restart `dsh web` afterwards so the new version loads.
 

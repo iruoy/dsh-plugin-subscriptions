@@ -4,7 +4,7 @@
  * the daily-cloudcode-pa v1internal request envelope.
  */
 
-import { errorChain, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { errorChain, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -25,8 +25,7 @@ import {
 import type { AntigravityRequest, AntigravityResponseEvent } from '../translate/antigravity.js'
 import {
   httpLlmError,
-  idleWatchdog,
-  mapFetchFailure,
+  streamWithAuthRetry,
   mergeReasoning,
   AccountCatalogCache,
   discoverOrRetryAuth,
@@ -627,33 +626,25 @@ export class AntigravityAdapter extends LlmAdapter {
     return this.streamCore(options, account)
   }
 
-  private async *streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
-    const watchdog = idleWatchdog(options.signal, this.options.streamIdleTimeoutMs)
-    try {
-      let session = await this.options.tokens.session(account)
-      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
-      let payload = toAntigravityRequest(options, messages, session.projectId, true)
-      let response = await requestAntigravityContent(
-        session, payload, true, this.options.runtime, this.options.fetchFn, watchdog.signal,
-      )
-      if (response.status === 401) {
-        this.clearAccountCatalog(account)
-        session = await this.options.tokens.session(account, true)
-        payload = toAntigravityRequest(options, messages, session.projectId, true)
-        response = await requestAntigravityContent(
-          session, payload, true, this.options.runtime, this.options.fetchFn, watchdog.signal,
-        )
-      }
-      if (!response.ok) throw await httpLlmError(response, 'Antigravity API')
-      if (response.body === null) {
-        throw new LlmError('Antigravity API returned no response body', EMPTY_RESPONSE_CODE)
-      }
-      yield* streamAntigravity(response.body, () => { watchdog.pulse() })
-    } catch (error) {
-      throw mapFetchFailure('Antigravity API', error, watchdog, options.signal)
-    } finally {
-      watchdog.stop()
-    }
+  private streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
+    return streamWithAuthRetry({
+      label: 'Antigravity API',
+      caller: options.signal,
+      idleTimeoutMs: this.options.streamIdleTimeoutMs,
+      session: force => this.options.tokens.session(account, force),
+      prepare: (_session, signal) => resolveImages(options.messages, this.options.resolveAttachments?.(), signal),
+      // The payload carries the session's project, so the 401 retry rebuilds it.
+      request: (session, messages, signal) => requestAntigravityContent(
+        session,
+        toAntigravityRequest(options, messages, session.projectId, true),
+        true,
+        this.options.runtime,
+        this.options.fetchFn,
+        signal,
+      ),
+      onUnauthorized: () => { this.clearAccountCatalog(account) },
+      parse: (body, pulse) => streamAntigravity(body, pulse),
+    })
   }
 
   /** Non-stream forwarding seam used by tests and future DSH complete calls. */

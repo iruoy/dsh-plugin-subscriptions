@@ -14,7 +14,7 @@
  * unchanged.
  */
 
-import { EMPTY_RESPONSE_CODE, errorChain, LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { errorChain, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -37,9 +37,7 @@ import {
 import { streamResponses, toResponsesInput, toResponsesTools } from '../translate/responses.js'
 import type { ReasoningReplayItem, ResponsesRequestInput, ResponsesStreamEvent } from '../translate/responses.js'
 import {
-  httpLlmError,
-  idleWatchdog,
-  mapFetchFailure,
+  streamWithAuthRetry,
   mergeReasoning,
   AccountCatalogCache,
   discoverAcrossAccounts,
@@ -920,61 +918,47 @@ export class CopilotAdapter extends LlmAdapter {
     return this.streamCore(options, account)
   }
 
-  private async *streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
-    const watchdog = idleWatchdog(options.signal, this.options.streamIdleTimeoutMs)
-    try {
-      // The discovered catalog decides the protocol: `/responses`-only model
-      // families (gpt-5.5/5.6, …) reject /chat/completions outright, and
-      // dual-protocol models reroute there once the request combines function
-      // tools with a reasoning effort (gpt-5.4 400s on the chat wire then).
-      // A configured `wire` outranks the catalog (see configuredWireEntry).
-      const wire = copilotRequestWire(
-        this.configuredWireEntry(options.model) ?? await this.discovered(options.model),
-        options,
-      )
-      let session = await this.options.tokens.session(account)
-      // Resolved once: the 401 retry below reuses the same bytes.
-      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
-      // Replay scope: account identity × conversation × model (see
-      // replayScope); a Copilot-token refresh preserves the GitHub token, so
-      // the 401 retry below reuses it too.
-      const scope = this.replayScope(session.refreshToken, options)
-      let response = await this.request(options, messages, session, watchdog.signal, wire, scope)
-      if (response.status === 401) {
-        // One forced refresh + retry on an unexpired-but-rejected token. The
-        // editor version is force-refreshed too: a 401 `IDE token expired`
-        // means GitHub raised its minimum VS Code version, and only a fresh
-        // Editor-Version header fixes that (a new token does not).
-        await latestVsCodeVersion(this.options.fetchFn ?? proxiedFetch, true)
-        session = await this.options.tokens.session(account, true)
-        response = await this.request(options, messages, session, watchdog.signal, wire, scope)
-      }
-      if (!response.ok) {
-        throw await httpLlmError(response, 'copilot API', {
-          // Copilot has no provider-specific reset reader yet. The shared
-          // mapper still honors its generic retry-after header and warns with
-          // rate-limit-shaped headers/body when GitHub sends another signal.
-          ...this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
-        })
-      }
-      if (response.body === null) {
-        throw new LlmError('copilot API returned no response body', EMPTY_RESPONSE_CODE)
-      }
-      const pulse = (): void => { watchdog.pulse() }
-      if (wire === 'responses') {
+  private streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
+    return streamWithAuthRetry({
+      label: 'copilot API',
+      caller: options.signal,
+      idleTimeoutMs: this.options.streamIdleTimeoutMs,
+      session: force => this.options.tokens.session(account, force),
+      prepare: async (session, signal) => ({
+        // The discovered catalog decides the protocol: `/responses`-only model
+        // families (gpt-5.5/5.6, …) reject /chat/completions outright, and
+        // dual-protocol models reroute there once the request combines function
+        // tools with a reasoning effort (gpt-5.4 400s on the chat wire then).
+        // A configured `wire` outranks the catalog (see configuredWireEntry).
+        wire: copilotRequestWire(
+          this.configuredWireEntry(options.model) ?? await this.discovered(options.model),
+          options,
+        ),
+        messages: await resolveImages(options.messages, this.options.resolveAttachments?.(), signal),
+        // Replay scope: account identity × conversation × model (see
+        // replayScope); a Copilot-token refresh preserves the GitHub token, so
+        // the 401 retry reuses it too.
+        scope: this.replayScope(session.refreshToken, options),
+      }),
+      request: (session, { wire, messages, scope }, signal) =>
+        this.request(options, messages, session, signal, wire, scope),
+      // The editor version is force-refreshed with the token: a 401 `IDE
+      // token expired` means GitHub raised its minimum VS Code version, and
+      // only a fresh Editor-Version header fixes that (a new token does not).
+      onUnauthorized: async () => { await latestVsCodeVersion(this.options.fetchFn ?? proxiedFetch, true) },
+      // Copilot has no provider-specific reset reader yet. The shared mapper
+      // still honors its generic retry-after header and warns with
+      // rate-limit-shaped headers/body when GitHub sends another signal.
+      errors: this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
+      parse: (body, pulse, { wire, scope }) => {
+        if (wire !== 'responses') return streamChatCompletions(body, pulse)
         // The normalizer doubles as the capture point for completed reasoning.
         const normalizer = new CopilotResponsesItemNormalizer((callIds, items) => {
           this.captureReasoning(scope, callIds, items)
         })
-        yield* streamResponses(response.body, pulse, event => normalizer.push(event))
-      } else {
-        yield* streamChatCompletions(response.body, pulse)
-      }
-    } catch (error: unknown) {
-      throw mapFetchFailure('copilot API', error, watchdog, options.signal)
-    } finally {
-      watchdog.stop()
-    }
+        return streamResponses(body, pulse, event => normalizer.push(event))
+      },
+    })
   }
 
   private async request(

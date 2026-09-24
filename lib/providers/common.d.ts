@@ -7,6 +7,7 @@
  */
 import { LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type { RateLimitResetReader } from './rate-limit.js';
+import type { StreamChunk } from '@deepseek-ai/dsh-llm';
 /** One configured model catalog entry. */
 export interface ModelEntry {
     /** Wire model id; must be non-empty. */
@@ -90,6 +91,38 @@ export declare function idleWatchdog(caller: AbortSignal | undefined, timeoutMs:
  * @returns the classified error.
  */
 export declare function mapFetchFailure(label: string, error: unknown, watchdog: IdleWatchdog, caller: AbortSignal | undefined): LlmError;
+/** One adapter's streaming request, as driven by {@link streamWithAuthRetry}. */
+export interface AuthRetryStream<S, P> {
+    /** Diagnostic prefix naming the provider API (e.g. `claude API`). */
+    label: string;
+    /** The caller's abort signal, when present. */
+    caller: AbortSignal | undefined;
+    /** Maximum idle interval while a stream read is outstanding. */
+    idleTimeoutMs: number;
+    /** Load the session; `forceRefresh` is set for the retry after a 401. */
+    session: (forceRefresh: boolean) => Promise<S>;
+    /**
+     * Runs once, after the first session and before the first request (image
+     * resolution, wire choice); the 401 retry reuses its result.
+     */
+    prepare: (session: S, signal: AbortSignal) => Promise<P>;
+    /** Send the request with the given session. */
+    request: (session: S, prepared: P, signal: AbortSignal) => Promise<Response>;
+    /** Provider-specific work before the forced refresh on a 401. */
+    onUnauthorized?: () => void | Promise<void>;
+    /** Rate-limit reader and warning sink for a failed response. */
+    errors?: HttpLlmErrorOptions;
+    /** Translate the response body into stream chunks, pulsing the watchdog on activity. */
+    parse: (body: ReadableStream<Uint8Array>, pulse: () => void, prepared: P) => AsyncIterable<StreamChunk>;
+}
+/**
+ * Stream one request under an idle watchdog, retrying once with a forced
+ * session refresh when the provider rejects an unexpired token with a 401.
+ * Failures map through {@link httpLlmError} and {@link mapFetchFailure}.
+ * @param stream - the adapter's session, request and parse hooks.
+ * @returns the translated stream chunks.
+ */
+export declare function streamWithAuthRetry<S, P>(stream: AuthRetryStream<S, P>): AsyncIterable<StreamChunk>;
 /** OAuth token-endpoint failure carrying the provider's `error` code when it sent one. */
 export declare class OAuthEndpointError extends Error {
     /** HTTP status of the token endpoint response. */

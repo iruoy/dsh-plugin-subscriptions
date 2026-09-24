@@ -5,7 +5,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { attributionHeaders, EMPTY_RESPONSE_CODE, errorChain, LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, errorChain, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -26,9 +26,7 @@ import type { ResponsesRequestInput } from '../translate/responses.js'
 import {
   deterministicSessionId,
   effortDisplayName,
-  httpLlmError,
-  idleWatchdog,
-  mapFetchFailure,
+  streamWithAuthRetry,
   mergeReasoning,
   AccountCatalogCache,
   discoverAcrossAccounts,
@@ -876,33 +874,20 @@ export class CodexAdapter extends LlmAdapter {
     return this.streamCore(options, account)
   }
 
-  private async *streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
-    const watchdog = idleWatchdog(options.signal, this.options.streamIdleTimeoutMs)
-    try {
-      let session = await this.options.tokens.session(account)
-      // Resolved once: the 401 retry below reuses the same bytes.
-      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
-      let response = await this.request(options, messages, session, watchdog.signal)
-      if (response.status === 401) {
-        // One forced refresh + retry on an unexpired-but-rejected token.
-        session = await this.options.tokens.session(account, true)
-        response = await this.request(options, messages, session, watchdog.signal)
-      }
-      if (!response.ok) {
-        throw await httpLlmError(response, 'codex API', {
-          rateLimitReset: codexRateLimitReset,
-          ...this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
-        })
-      }
-      if (response.body === null) {
-        throw new LlmError('codex API returned no response body', EMPTY_RESPONSE_CODE)
-      }
-      yield* streamResponses(response.body, () => { watchdog.pulse() })
-    } catch (error: unknown) {
-      throw mapFetchFailure('codex API', error, watchdog, options.signal)
-    } finally {
-      watchdog.stop()
-    }
+  private streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
+    return streamWithAuthRetry({
+      label: 'codex API',
+      caller: options.signal,
+      idleTimeoutMs: this.options.streamIdleTimeoutMs,
+      session: force => this.options.tokens.session(account, force),
+      prepare: (_session, signal) => resolveImages(options.messages, this.options.resolveAttachments?.(), signal),
+      request: (session, messages, signal) => this.request(options, messages, session, signal),
+      errors: {
+        rateLimitReset: codexRateLimitReset,
+        ...this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
+      },
+      parse: (body, pulse) => streamResponses(body, pulse),
+    })
   }
 
   private async request(

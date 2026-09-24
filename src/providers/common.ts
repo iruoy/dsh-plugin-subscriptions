@@ -9,6 +9,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   CONTEXT_WINDOW_EXCEEDED_CODE,
+  EMPTY_RESPONSE_CODE,
   isContextWindowExceededError,
   isQuotaExceededError,
   LlmError,
@@ -17,6 +18,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { rateLimitDiagnostics, retryAfterInstant, waitFromReset } from './rate-limit.js'
 import type { RateLimitResetReader } from './rate-limit.js'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 
 /** One configured model catalog entry. */
 export interface ModelEntry {
@@ -230,6 +232,61 @@ export function mapFetchFailure(
   if (caller?.aborted === true) return new LlmError(`${label} request aborted by caller`, 'ABORTED', { cause: error })
   if (error instanceof LlmError) return error
   return new LlmError(`${label} request failed`, 'TRANSPORT', { cause: error })
+}
+
+/** One adapter's streaming request, as driven by {@link streamWithAuthRetry}. */
+export interface AuthRetryStream<S, P> {
+  /** Diagnostic prefix naming the provider API (e.g. `claude API`). */
+  label: string
+  /** The caller's abort signal, when present. */
+  caller: AbortSignal | undefined
+  /** Maximum idle interval while a stream read is outstanding. */
+  idleTimeoutMs: number
+  /** Load the session; `forceRefresh` is set for the retry after a 401. */
+  session: (forceRefresh: boolean) => Promise<S>
+  /**
+   * Runs once, after the first session and before the first request (image
+   * resolution, wire choice); the 401 retry reuses its result.
+   */
+  prepare: (session: S, signal: AbortSignal) => Promise<P>
+  /** Send the request with the given session. */
+  request: (session: S, prepared: P, signal: AbortSignal) => Promise<Response>
+  /** Provider-specific work before the forced refresh on a 401. */
+  onUnauthorized?: () => void | Promise<void>
+  /** Rate-limit reader and warning sink for a failed response. */
+  errors?: HttpLlmErrorOptions
+  /** Translate the response body into stream chunks, pulsing the watchdog on activity. */
+  parse: (body: ReadableStream<Uint8Array>, pulse: () => void, prepared: P) => AsyncIterable<StreamChunk>
+}
+
+/**
+ * Stream one request under an idle watchdog, retrying once with a forced
+ * session refresh when the provider rejects an unexpired token with a 401.
+ * Failures map through {@link httpLlmError} and {@link mapFetchFailure}.
+ * @param stream - the adapter's session, request and parse hooks.
+ * @returns the translated stream chunks.
+ */
+export async function* streamWithAuthRetry<S, P>(stream: AuthRetryStream<S, P>): AsyncIterable<StreamChunk> {
+  const watchdog = idleWatchdog(stream.caller, stream.idleTimeoutMs)
+  try {
+    let session = await stream.session(false)
+    const prepared = await stream.prepare(session, watchdog.signal)
+    let response = await stream.request(session, prepared, watchdog.signal)
+    if (response.status === 401) {
+      await stream.onUnauthorized?.()
+      session = await stream.session(true)
+      response = await stream.request(session, prepared, watchdog.signal)
+    }
+    if (!response.ok) throw await httpLlmError(response, stream.label, stream.errors)
+    if (response.body === null) {
+      throw new LlmError(`${stream.label} returned no response body`, EMPTY_RESPONSE_CODE)
+    }
+    yield* stream.parse(response.body, () => { watchdog.pulse() }, prepared)
+  } catch (error: unknown) {
+    throw mapFetchFailure(stream.label, error, watchdog, stream.caller)
+  } finally {
+    watchdog.stop()
+  }
 }
 
 /** OAuth token-endpoint failure carrying the provider's `error` code when it sent one. */

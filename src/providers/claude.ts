@@ -5,7 +5,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { EMPTY_RESPONSE_CODE, errorChain, LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { errorChain, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -29,8 +29,7 @@ import {
 } from '../translate/anthropic.js'
 import {
   httpLlmError,
-  idleWatchdog,
-  mapFetchFailure,
+  streamWithAuthRetry,
   mergeReasoning,
   AccountCatalogCache,
   discoverAcrossAccounts,
@@ -703,32 +702,20 @@ export class ClaudeAdapter extends LlmAdapter {
     return this.streamCore(options, account)
   }
 
-  private async *streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
-    const watchdog = idleWatchdog(options.signal, this.options.streamIdleTimeoutMs)
-    try {
-      let session = await this.options.tokens.session(account)
-      // Resolved once: the 401 retry below reuses the same bytes.
-      const messages = await resolveImages(options.messages, this.options.resolveAttachments?.(), watchdog.signal)
-      let response = await this.request(options, messages, session, watchdog.signal)
-      if (response.status === 401) {
-        session = await this.options.tokens.session(account, true)
-        response = await this.request(options, messages, session, watchdog.signal)
-      }
-      if (!response.ok) {
-        throw await httpLlmError(response, 'claude API', {
-          rateLimitReset: claudeRateLimitReset,
-          ...this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
-        })
-      }
-      if (response.body === null) {
-        throw new LlmError('claude API returned no response body', EMPTY_RESPONSE_CODE)
-      }
-      yield* streamAnthropic(response.body, () => { watchdog.pulse() })
-    } catch (error: unknown) {
-      throw mapFetchFailure('claude API', error, watchdog, options.signal)
-    } finally {
-      watchdog.stop()
-    }
+  private streamCore(options: GenerateOptions, account?: string): AsyncIterable<StreamChunk> {
+    return streamWithAuthRetry({
+      label: 'claude API',
+      caller: options.signal,
+      idleTimeoutMs: this.options.streamIdleTimeoutMs,
+      session: force => this.options.tokens.session(account, force),
+      prepare: (_session, signal) => resolveImages(options.messages, this.options.resolveAttachments?.(), signal),
+      request: (session, messages, signal) => this.request(options, messages, session, signal),
+      errors: {
+        rateLimitReset: claudeRateLimitReset,
+        ...this.options.onWarn === undefined ? {} : { onWarn: this.options.onWarn },
+      },
+      parse: (body, pulse) => streamAnthropic(body, pulse),
+    })
   }
 
   /**

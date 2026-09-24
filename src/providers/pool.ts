@@ -203,22 +203,29 @@ export class PoolAdapter extends LlmAdapter {
     const resolved: LlmResolvedModelInfo[] = []
     let lastFailure: unknown
     const members = await this.concrete(definition.members)
-    for (const member of members) {
+    // Members resolve independently (a cold catalog may mean a discovery
+    // fetch each), so run them concurrently and keep member order.
+    const outcomes = await Promise.allSettled(members.map(async (member) => {
       const adapter = this.options.adapters[member.provider]
-      if (adapter === undefined) continue
-      // Tolerate per-member failures (a misconfigured tier member, a
-      // logged-out provider throwing AUTH): the pool serves as long as ONE
-      // member resolves, mirroring stream()'s failover semantics.
-      try {
-        resolved.push(await adapter.resolveOwnModel(member.provider, member.model, member.account))
-      } catch (error: unknown) {
-        lastFailure = error
-        this.warnOnce(
-          `pool "${model}": member ${memberLabel(member)} failed to resolve`
-          + ` (${error instanceof Error ? error.message : String(error)}); excluding it`,
-        )
+      return adapter === undefined
+        ? undefined
+        : adapter.resolveOwnModel(member.provider, member.model, member.account)
+    }))
+    // Tolerate per-member failures (a misconfigured tier member, a logged-out
+    // provider throwing AUTH): the pool serves as long as ONE member
+    // resolves, mirroring stream()'s failover semantics.
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value !== undefined) resolved.push(outcome.value)
+        return
       }
-    }
+      const error: unknown = outcome.reason
+      lastFailure = error
+      this.warnOnce(
+        `pool "${model}": member ${memberLabel(members[index])} failed to resolve`
+        + ` (${error instanceof Error ? error.message : String(error)}); excluding it`,
+      )
+    })
     if (resolved.length === 0) {
       throw new LlmError(`pool "${model}" has no usable member`, 'NO_ADAPTER', {
         ...lastFailure === undefined ? {} : { cause: lastFailure },

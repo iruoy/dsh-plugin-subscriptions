@@ -190,24 +190,20 @@ export interface IdleWatchdog {
 export function idleWatchdog(caller: AbortSignal | undefined, timeoutMs: number): IdleWatchdog {
   const controller = new AbortController()
   let expired = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const arm = (): void => {
-    if (timer !== undefined) clearTimeout(timer)
-    timer = setTimeout(() => {
-      expired = true
-      controller.abort(new Error(`stream idle timeout after ${String(timeoutMs)}ms`))
-    }, timeoutMs)
-    timer.unref()
-  }
+  const timer = setTimeout(() => {
+    expired = true
+    controller.abort(new Error(`stream idle timeout after ${String(timeoutMs)}ms`))
+  }, timeoutMs)
+  timer.unref()
   const onCallerAbort = (): void => controller.abort(caller?.reason)
   if (caller?.aborted === true) controller.abort(caller.reason)
   else caller?.addEventListener('abort', onCallerAbort, { once: true })
-  arm()
   return {
     signal: controller.signal,
-    pulse: arm,
+    // refresh() restarts the same timer instead of allocating one per chunk.
+    pulse: () => void timer.refresh(),
     stop() {
-      if (timer !== undefined) clearTimeout(timer)
+      clearTimeout(timer)
       caller?.removeEventListener('abort', onCallerAbort)
     },
     timedOut: () => expired,

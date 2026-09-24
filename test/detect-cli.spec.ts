@@ -19,8 +19,8 @@ import {
 // detectClaudeVersion
 // ---------------------------------------------------------------------------
 
-test('detectClaudeVersion returns a semver-shaped string', () => {
-  const version = detectClaudeVersion()
+test('detectClaudeVersion returns a semver-shaped string', async () => {
+  const version = await detectClaudeVersion()
   assert.match(version, /^\d+\.\d+\.\d+$/, `expected semver, got "${version}"`)
 })
 
@@ -28,12 +28,12 @@ test('detectClaudeVersion fallback is a valid semver', () => {
   assert.match(CLAUDE_CLI_FALLBACK_VERSION, /^\d+\.\d+\.\d+$/)
 })
 
-test('detectClaudeVersion returns the fallback when claude is not in PATH', () => {
+test('detectClaudeVersion returns the fallback when claude is not in PATH', async () => {
   // Temporarily break PATH so `claude` cannot be found.
   const original = process.env.PATH
   try {
     process.env.PATH = ''
-    const version = detectClaudeVersion()
+    const version = await detectClaudeVersion()
     assert.equal(version, CLAUDE_CLI_FALLBACK_VERSION)
   } finally {
     process.env.PATH = original
@@ -41,7 +41,7 @@ test('detectClaudeVersion returns the fallback when claude is not in PATH', () =
 })
 
 /** A working CLI must win over the hard-coded fallback version. */
-test('detectClaudeVersion reads a resolvable CLI rather than the fallback', () => {
+test('detectClaudeVersion reads a resolvable CLI rather than the fallback', async () => {
   const bin = join(mkdtempSync(join(tmpdir(), 'claude-probe-')), process.platform === 'win32' ? 'claude.cmd' : 'claude')
   const reported = '9.9.9'
   writeFileSync(bin, process.platform === 'win32'
@@ -50,7 +50,7 @@ test('detectClaudeVersion reads a resolvable CLI rather than the fallback', () =
   const original = process.env.PATH
   try {
     process.env.PATH = dirname(bin)
-    assert.equal(detectClaudeVersion(), reported)
+    assert.equal(await detectClaudeVersion(), reported)
   } finally {
     process.env.PATH = original
     rmSync(dirname(bin), { recursive: true, force: true })

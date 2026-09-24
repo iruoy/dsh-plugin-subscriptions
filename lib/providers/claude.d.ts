@@ -43,7 +43,7 @@ export declare const claudeRateLimitReset: RateLimitResetReader;
  * cannot be sent here (one user-agent slot, and the CLI's wins).
  */
 export declare const CLAUDE_CLI_FALLBACK_VERSION = "2.1.263";
-export declare function detectClaudeVersion(): string;
+export declare function detectClaudeVersion(): Promise<string>;
 export declare const CLAUDE_BETA_FALLBACK: string;
 /** Static claude flow facts for the OAuth flow engine. */
 export declare const claudeFlow: FlowSpec;

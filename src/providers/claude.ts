@@ -4,7 +4,8 @@
  * the Anthropic Messages API with the Claude Code identity headers.
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { errorChain, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -115,17 +116,18 @@ const CLAUDE_VERSION_PROBES: readonly (readonly [string, readonly string[], { sh
       ]
     : [['claude', ['--version'], {}]]
 
-export function detectClaudeVersion(): string {
+const execFileAsync = promisify(execFile)
+
+export async function detectClaudeVersion(): Promise<string> {
   let lastError: unknown
   for (const [command, args, options] of CLAUDE_VERSION_PROBES) {
     try {
-      const raw = execFileSync(command, [...args], {
+      const { stdout } = await execFileAsync(command, [...args], {
         timeout: 10_000,
         encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
         ...options,
       })
-      const match = raw.match(/(\d+\.\d+\.\d+)/)
+      const match = stdout.match(/(\d+\.\d+\.\d+)/)
       if (match) return match[1]
     } catch (error) {
       lastError = error
@@ -141,12 +143,11 @@ export function detectClaudeVersion(): string {
 // Lazy + memoized: detectClaudeVersion() shells out to `claude --version`,
 // so this must not run at module-evaluation time (it would fire for every
 // consumer of this module regardless of whether Claude is a configured
-// provider). Computed on first use of getClaudeCliUserAgent() instead.
-let claudeCliUserAgent: string | undefined
-function getClaudeCliUserAgent(): string {
-  if (claudeCliUserAgent === undefined) {
-    claudeCliUserAgent = `claude-cli/${detectClaudeVersion()} (external, cli)`
-  }
+// provider). The ClaudeAdapter starts it at construction; the probe runs
+// asynchronously so it never blocks the event loop, and requests await it.
+let claudeCliUserAgent: Promise<string> | undefined
+function getClaudeCliUserAgent(): Promise<string> {
+  claudeCliUserAgent ??= detectClaudeVersion().then(version => `claude-cli/${version} (external, cli)`)
   return claudeCliUserAgent
 }
 export const CLAUDE_BETA_FALLBACK = [
@@ -369,7 +370,7 @@ export async function fetchClaudeUsage(
       'anthropic-beta': 'oauth-2025-04-20',
       // Unrecognized clients are aggressively rate-limited on this endpoint,
       // so it presents as the CLI like every other subscription request.
-      'user-agent': getClaudeCliUserAgent(),
+      'user-agent': await getClaudeCliUserAgent(),
       'accept': 'application/json',
     },
     ...signal === undefined ? {} : { signal },
@@ -453,7 +454,7 @@ export async function fetchClaudeModels(
     headers: {
       'authorization': `Bearer ${session.accessToken}`,
       'anthropic-version': '2023-06-01',
-      'user-agent': getClaudeCliUserAgent(),
+      'user-agent': await getClaudeCliUserAgent(),
       'anthropic-dangerous-direct-browser-access': 'true',
       'accept': 'application/json',
     },
@@ -572,6 +573,8 @@ export class ClaudeAdapter extends LlmAdapter {
   constructor(private readonly options: ClaudeAdapterOptions) {
     super()
     this.catalogs = new AccountCatalogCache(options.catalogStore, () => options.tokens.defaultAccount())
+    // Probe the CLI version in the background so the first request finds it ready.
+    void getClaudeCliUserAgent()
   }
 
   private async fetchCatalog(account?: string, signal?: AbortSignal): Promise<DiscoveredModel[]> {
@@ -755,7 +758,7 @@ export class ClaudeAdapter extends LlmAdapter {
         'authorization': `Bearer ${session.accessToken}`,
         'anthropic-version': '2023-06-01',
         'anthropic-beta': CLAUDE_BETA_FLAGS,
-        'user-agent': getClaudeCliUserAgent(),
+        'user-agent': await getClaudeCliUserAgent(),
         'x-app': 'cli',
         'anthropic-dangerous-direct-browser-access': 'true',
         'accept': 'text/event-stream',

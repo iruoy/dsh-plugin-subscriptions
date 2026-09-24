@@ -168,6 +168,18 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * RFC3339 timestamp → epoch ms. Unlike {@link resetInstantFromValue}, numbers
+ * and durations are not accepted.
+ * @param value - a parsed JSON field.
+ * @returns the instant, or undefined when absent/unparsable.
+ */
+export function resetInstantFromDate(value: unknown): number | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+/**
  * Parse a response body as JSON without throwing on the non-JSON bodies
  * providers occasionally return under load (an HTML gateway page, say).
  * @param body - the complete response body.

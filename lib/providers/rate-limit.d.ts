@@ -72,6 +72,13 @@ export declare function retryAfterInstant(response: Response, now: number): numb
 /** Whether a parsed JSON value is a plain object (not null, not an array). */
 export declare function isRecord(value: unknown): value is Record<string, unknown>;
 /**
+ * RFC3339 timestamp → epoch ms. Unlike {@link resetInstantFromValue}, numbers
+ * and durations are not accepted.
+ * @param value - a parsed JSON field.
+ * @returns the instant, or undefined when absent/unparsable.
+ */
+export declare function resetInstantFromDate(value: unknown): number | undefined;
+/**
  * Parse a response body as JSON without throwing on the non-JSON bodies
  * providers occasionally return under load (an HTML gateway page, say).
  * @param body - the complete response body.

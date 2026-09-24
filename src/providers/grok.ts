@@ -50,6 +50,7 @@ import {
   DEFAULT_RETRY,
   jsonBody,
   resetFromFields,
+  resetInstantFromDate,
   subscriptionRetryPolicy,
 } from './rate-limit.js'
 import type { RateLimitResetReader, RateLimitWait } from './rate-limit.js'
@@ -304,13 +305,6 @@ export function isGrokPermanentRefreshError(error: unknown): boolean {
  */
 export const GROK_BILLING_URL = 'https://cli-chat-proxy.grok.com/v1/billing?format=credits'
 
-/** RFC3339 timestamp → epoch ms, or undefined when absent/unparsable. */
-function grokResetsAt(value: unknown): number | undefined {
-  if (typeof value !== 'string' || value.length === 0) return undefined
-  const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
 /** The billing payload subset this plugin reads (both credits-config shapes). */
 interface GrokBillingConfig {
   /** Included credit usage as a percentage of the allowance (0–100; newer shape). */
@@ -358,14 +352,14 @@ export async function fetchGrokUsage(
     const kind: UsageWindow['kind'] = config.currentPeriod?.type === 'USAGE_PERIOD_TYPE_WEEKLY'
       ? 'weekly'
       : 'other'
-    const resetsAt = grokResetsAt(config.currentPeriod?.end)
+    const resetsAt = resetInstantFromDate(config.currentPeriod?.end)
     const usedPercent = typeof config.creditUsagePercent === 'number' && Number.isFinite(config.creditUsagePercent)
       ? config.creditUsagePercent
       : 0
     windows.push({ kind, usedPercent, ...resetsAt === undefined ? {} : { resetsAt } })
   } else if (typeof config.monthlyLimit?.val === 'number' && config.monthlyLimit.val > 0) {
     const used = typeof config.used?.val === 'number' ? config.used.val : 0
-    const resetsAt = grokResetsAt(config.billingPeriodEnd)
+    const resetsAt = resetInstantFromDate(config.billingPeriodEnd)
     windows.push({
       kind: 'other',
       usedPercent: (used / config.monthlyLimit.val) * 100,

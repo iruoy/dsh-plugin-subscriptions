@@ -49,6 +49,7 @@ import {
   earliestReset,
   jsonBody,
   resetFromFields,
+  resetInstantFromDate,
   resetInstantFromHeader,
   subscriptionRetryPolicy,
 } from './rate-limit.js'
@@ -303,19 +304,12 @@ export function isClaudePermanentRefreshError(error: unknown): boolean {
 
 export const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 
-/** RFC3339 `resets_at` value → epoch ms, or undefined when absent/unparsable. */
-function claudeResetsAt(value: unknown): number | undefined {
-  if (typeof value !== 'string' || value.length === 0) return undefined
-  const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
 /** Map one legacy `{utilization, resets_at}` bucket; undefined when null or unusable. */
 function claudeLegacyWindow(value: unknown, kind: UsageWindow['kind'], scope?: string): UsageWindow | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const bucket = value as { utilization?: number; resets_at?: string }
   if (typeof bucket.utilization !== 'number' || !Number.isFinite(bucket.utilization)) return undefined
-  const resetsAt = claudeResetsAt(bucket.resets_at)
+  const resetsAt = resetInstantFromDate(bucket.resets_at)
   return {
     kind,
     ...scope === undefined ? {} : { scope },
@@ -344,7 +338,7 @@ function claudeLimitsWindows(value: unknown): UsageWindow[] {
       ? 'session'
       : entry.kind === 'weekly_all' || entry.kind === 'weekly_scoped' ? 'weekly' : 'other'
     const scope = entry.scope?.model?.display_name
-    const resetsAt = claudeResetsAt(entry.resets_at)
+    const resetsAt = resetInstantFromDate(entry.resets_at)
     windows.push({
       kind,
       ...typeof scope === 'string' && scope.length > 0 ? { scope } : {},

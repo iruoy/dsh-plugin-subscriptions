@@ -48,7 +48,7 @@ import { proxiedFetch } from '../http.js'
 import { ANTIGRAVITY_DEFAULT_CLIENT_ID, ANTIGRAVITY_DEFAULT_CLIENT_SECRET } from './antigravity-oauth-client.js'
 import { AccountTokenManager, DISCOVERY_TIMEOUT_MS, unionAccountCatalogs } from './accounts.js'
 import type { PoolAdapter } from './pool.js'
-import { DEFAULT_RATE_LIMIT_WAIT, DEFAULT_RETRY, subscriptionRetryPolicy } from './rate-limit.js'
+import { DEFAULT_RATE_LIMIT_WAIT, DEFAULT_RETRY, resetInstantFromDate, subscriptionRetryPolicy } from './rate-limit.js'
 import type { RateLimitWait } from './rate-limit.js'
 
 export const ANTIGRAVITY_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -403,12 +403,6 @@ export async function fetchAntigravityModels(
   return models
 }
 
-function resetTime(value: unknown): number | undefined {
-  if (typeof value !== 'string') return undefined
-  const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
 function usageWindow(
   kind: UsageWindow['kind'],
   scope: string,
@@ -416,7 +410,7 @@ function usageWindow(
 ): UsageWindow | undefined {
   const remaining = quota?.remainingFraction
   if (typeof remaining !== 'number' || !Number.isFinite(remaining)) return undefined
-  const resetsAt = resetTime(quota?.resetTime)
+  const resetsAt = resetInstantFromDate(quota?.resetTime)
   return {
     kind,
     scope,

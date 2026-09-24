@@ -10,7 +10,7 @@ export declare function readClaudeCodeCredentials(): ClaudeSession | undefined;
  * @param expectedPriorAccessToken - the access token this refresh started from.
  * @returns whether the write-back succeeded.
  */
-export declare function writeBackClaudeCodeCredentials(next: ClaudeSession, expectedPriorAccessToken: string): boolean;
+export declare function writeBackClaudeCodeCredentials(next: ClaudeSession, expectedPriorAccessToken: string): Promise<boolean>;
 /**
  * Refresh a Claude session, first checking whether Claude Code's own store
  * already holds a fresher token (rotated by the `claude` CLI or another

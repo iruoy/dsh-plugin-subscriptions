@@ -952,8 +952,7 @@ export function apply(ctx: Context, config: Config): void {
                 signal => adapter.listOwnModels(provider, account, signal),
                 POOL_USAGE_TIMEOUT_MS,
               )
-              const settings = preferences.get(provider).accounts
-              const policy = settings && Object.hasOwn(settings, account) ? settings[account] : undefined
+              const policy = preferences.account(provider, account)
               return models === undefined ? undefined : { account, models: models.filter(model => accountAllowsPool(policy, model.id)) }
             }))).filter(entry => entry !== undefined)
             if (catalogs.length > 0) sources[provider] = { catalogs }

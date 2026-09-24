@@ -165,6 +165,24 @@ test('an empty toolCallId falls back to the other correlation ids', () => {
   assert.deepEqual(toResponsesInput(messages).input[1], { type: 'function_call_output', call_id: 'fallback', output: 'ok' })
 })
 
+test('text-only tool outputs keep separate text blocks on separate lines', () => {
+  const messages: TranslatableMessage[] = [
+    message('assistant', [toolCall('shot', 'screenshot', '{}')]),
+    {
+      role: 'tool',
+      toolCallId: 'shot',
+      content: [
+        { type: 'text', text: 'saved screenshot' },
+        { type: 'image', mediaType: 'image/png', dataBase64: 'AAAA' },
+        { type: 'text', text: 'Image reference (for image_generate.referenceImages): {}' },
+      ],
+    },
+  ]
+  const output = 'saved screenshot\nImage reference (for image_generate.referenceImages): {}'
+  assert.equal(toResponsesInput(messages).input[1].output, output)
+  assert.equal(toChatMessages(messages)[1].content, output)
+})
+
 test('resolveImages preserves first-class tool call ids', async () => {
   const ref = { attachmentId: 'image-1', mediaType: 'image/png', bytes: 2, width: 1, height: 1 }
   const result = {

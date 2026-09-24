@@ -12,12 +12,13 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '../compat.js'
 import type {
-  ContentBlock,
   StreamChunk,
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.js'
+import { closeBlock } from './blocks.js'
+import type { OpenBlock } from './blocks.js'
 import { toolResultText, withToolResultBlocks } from './resolved.js'
 import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
 
@@ -301,32 +302,6 @@ export interface AnthropicStreamEvent {
   }
   usage?: { output_tokens?: number }
   error?: { type?: string; message?: string }
-}
-
-/** One open harness block under assembly. */
-interface OpenBlock {
-  index: number
-  kind: 'text' | 'reasoning' | 'tool-call'
-  text: string
-  callId: string
-  name?: string
-}
-
-/** Assemble the final ContentBlock for one open block. */
-function closeBlock(block: OpenBlock): ContentBlock {
-  switch (block.kind) {
-    case 'text':
-      return { type: 'text', text: block.text }
-    case 'reasoning':
-      return { type: 'reasoning', text: block.text }
-    case 'tool-call':
-      return {
-        type: 'tool-call',
-        id: ToolCallId(block.callId),
-        name: block.name ?? '',
-        arguments: block.text,
-      }
-  }
 }
 
 /**

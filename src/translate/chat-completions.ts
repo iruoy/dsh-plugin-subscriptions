@@ -9,12 +9,13 @@
 import { EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '../compat.js'
 import type {
-  ContentBlock,
   StreamChunk,
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.js'
+import { closeBlock } from './blocks.js'
+import type { OpenBlock } from './blocks.js'
 import { toolResultText, withToolResultImages } from './resolved.js'
 import type { TranslatableMessage } from './resolved.js'
 
@@ -183,32 +184,6 @@ export function mapChatCompletionsUsage(usage: ChatCompletionsUsage): TokenUsage
     outputTokens: usage.completion_tokens,
     ...cached !== undefined ? { cacheReadTokens: cached } : {},
     ...reasoning !== undefined ? { reasoningTokens: reasoning } : {},
-  }
-}
-
-/** One open harness block under assembly. */
-interface OpenBlock {
-  index: number
-  kind: 'text' | 'reasoning' | 'tool-call'
-  text: string
-  callId: string
-  name?: string
-}
-
-/** Assemble the final ContentBlock for one open block. */
-function closeBlock(block: OpenBlock): ContentBlock {
-  switch (block.kind) {
-    case 'text':
-      return { type: 'text', text: block.text }
-    case 'reasoning':
-      return { type: 'reasoning', text: block.text }
-    case 'tool-call':
-      return {
-        type: 'tool-call',
-        id: ToolCallId(block.callId),
-        name: block.name ?? '',
-        arguments: block.text,
-      }
   }
 }
 

@@ -51,7 +51,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && tsdown",
+    "build": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\" && tsc && tsdown",
     "test": "tsc -p tsconfig.test.json && node --test \"lib-test/test/**/*.spec.js\"",
     "prepublishOnly": "pnpm build && pnpm test"
   },

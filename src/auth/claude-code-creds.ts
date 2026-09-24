@@ -1,5 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -65,20 +64,7 @@ function credentialsFilePath(): string {
   return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), '.credentials.json')
 }
 
-function readKeychainRaw(): string | undefined {
-  try {
-    return execFileSync('/usr/bin/security', ['find-generic-password', '-s', PRIMARY_SERVICE, '-w'], {
-      timeout: 3000,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim()
-  } catch {
-    return undefined
-  }
-}
-
-/** Non-blocking {@link readKeychainRaw} for the refresh path. */
-async function readKeychainRawAsync(): Promise<string | undefined> {
+async function readKeychainRaw(): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync('/usr/bin/security', ['find-generic-password', '-s', PRIMARY_SERVICE, '-w'], {
       timeout: 3000,
@@ -90,29 +76,10 @@ async function readKeychainRawAsync(): Promise<string | undefined> {
   }
 }
 
-function readFileRaw(): string | undefined {
-  try {
-    return readFileSync(credentialsFilePath(), 'utf8')
-  } catch {
-    return undefined
-  }
-}
-
 /** Read the current Claude Code session from its source of truth: macOS Keychain, falling back to the credentials file. */
-export function readClaudeCodeCredentials(): ClaudeSession | undefined {
+export async function readClaudeCodeCredentials(): Promise<ClaudeSession | undefined> {
   if (process.platform === 'darwin') {
-    const raw = readKeychainRaw()
-    const session = raw !== undefined ? parseBlob(raw) : undefined
-    if (session) return session
-  }
-  const raw = readFileRaw()
-  return raw !== undefined ? parseBlob(raw) : undefined
-}
-
-/** Non-blocking {@link readClaudeCodeCredentials} for the refresh path. */
-async function readClaudeCodeCredentialsAsync(): Promise<ClaudeSession | undefined> {
-  if (process.platform === 'darwin') {
-    const raw = await readKeychainRawAsync()
+    const raw = await readKeychainRaw()
     const session = raw !== undefined ? parseBlob(raw) : undefined
     if (session) return session
   }
@@ -162,7 +129,7 @@ function mergeIntoBlob(existingRaw: string, next: ClaudeSession): string | undef
  */
 export async function writeBackClaudeCodeCredentials(next: ClaudeSession, expectedPriorAccessToken: string): Promise<boolean> {
   if (process.platform === 'darwin') {
-    const raw = await readKeychainRawAsync()
+    const raw = await readKeychainRaw()
     if (raw === undefined || !blobMatches(raw, expectedPriorAccessToken)) return false
     const updated = mergeIntoBlob(raw, next)
     if (updated === undefined) return false
@@ -210,7 +177,7 @@ export async function refreshClaudeSynced(
   session: ClaudeSession,
   doRefresh: (session: ClaudeSession) => Promise<ClaudeSession>,
 ): Promise<ClaudeSession> {
-  const fromSource = await readClaudeCodeCredentialsAsync()
+  const fromSource = await readClaudeCodeCredentials()
   const base = fromSource !== undefined && fromSource.accessToken !== session.accessToken ? fromSource : session
   if (base.expiresAt > Date.now() + 60_000) return base
   const next = await doRefresh(base)

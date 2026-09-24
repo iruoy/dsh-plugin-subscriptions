@@ -1,6 +1,6 @@
 import type { ClaudeSession } from './store.js';
 /** Read the current Claude Code session from its source of truth: macOS Keychain, falling back to the credentials file. */
-export declare function readClaudeCodeCredentials(): ClaudeSession | undefined;
+export declare function readClaudeCodeCredentials(): Promise<ClaudeSession | undefined>;
 /**
  * Write a refreshed session back to Claude Code's own credential store, so
  * the `claude` CLI and any other consumer of the same account see the token

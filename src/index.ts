@@ -374,7 +374,7 @@ export class SubscriptionsAuthController implements AuthController {
      * tests can drive both login paths without a real credential store; the
      * plugin itself always uses the default.
      */
-    private readonly readClaudeCreds: () => ClaudeSession | undefined = readClaudeCodeCredentials,
+    private readonly readClaudeCreds: () => Promise<ClaudeSession | undefined> | ClaudeSession | undefined = readClaudeCodeCredentials,
     /**
      * The pool's usage cache, when the pool is enabled. Routing `usage`
      * through it (instead of the raw fetcher) means the Settings page shares
@@ -433,7 +433,11 @@ export class SubscriptionsAuthController implements AuthController {
 
   async login(provider: ProviderId, method?: LoginMethod): Promise<{ authorizeUrl: string; userCode?: string }> {
     if (provider === 'claude' && method !== 'oauth') {
-      const imported = this.readClaudeCreds()
+      const before = this.claims.get('claude')
+      const imported = await this.readClaudeCreds()
+      // A logout or login called while the read was pending is the later
+      // call, so it wins over this import.
+      if (imported !== undefined && this.claims.get('claude') !== before) return { authorizeUrl: '' }
       if (imported !== undefined) {
         // An OAuth attempt may be in flight from an earlier click — the user
         // logged in through the CLI meanwhile. Claiming supersedes it whether

@@ -83,11 +83,11 @@ async function inIsolatedHome<T>(run: () => Promise<T>): Promise<T> {
  * it does, no `CLAUDE_CONFIG_DIR` fixture can be observed, so the file-parsing
  * tests are skipped outright — reporting them as passed would be a lie.
  */
-const keychainAnswers = ((): boolean => {
+const keychainAnswers = await (async (): Promise<boolean> => {
   const saved = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = tempDir('claude-probe-')
   try {
-    return readClaudeCodeCredentials() !== undefined
+    return await readClaudeCodeCredentials() !== undefined
   } finally {
     restoreEnv('CLAUDE_CONFIG_DIR', saved)
   }
@@ -155,35 +155,31 @@ test('Claude OAuth parameters match what Claude Code sends', () => {
 // ---------------------------------------------------------------------------
 
 test('readClaudeCodeCredentials returns session from .credentials.json', needsFileStore, async () => {
-  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-creds-', VALID_BLOB), () => {
-    const session = readClaudeCodeCredentials()
+  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-creds-', VALID_BLOB), async () => {
+    const session = await readClaudeCodeCredentials()
     assert.ok(session !== undefined, 'the credentials file is read')
     assert.equal(session.accessToken, 'test-access-token')
     assert.equal(session.refreshToken, 'test-refresh-token')
     assert.equal(typeof session.expiresAt, 'number')
-    return Promise.resolve()
   })
 })
 
 test('readClaudeCodeCredentials returns undefined when no credentials file', needsFileStore, async () => {
-  await withEnv('CLAUDE_CONFIG_DIR', tempDir('claude-empty-'), () => {
-    assert.equal(readClaudeCodeCredentials(), undefined)
-    return Promise.resolve()
+  await withEnv('CLAUDE_CONFIG_DIR', tempDir('claude-empty-'), async () => {
+    assert.equal(await readClaudeCodeCredentials(), undefined)
   })
 })
 
 test('readClaudeCodeCredentials returns undefined for malformed JSON', needsFileStore, async () => {
-  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-bad-', '{not valid json!!!'), () => {
-    assert.equal(readClaudeCodeCredentials(), undefined)
-    return Promise.resolve()
+  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-bad-', '{not valid json!!!'), async () => {
+    assert.equal(await readClaudeCodeCredentials(), undefined)
   })
 })
 
 test('readClaudeCodeCredentials returns undefined for incomplete credentials', needsFileStore, async () => {
   const blob = JSON.stringify({ claudeAiOauth: { accessToken: 'only-access' } })
-  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-incomplete-', blob), () => {
-    assert.equal(readClaudeCodeCredentials(), undefined, 'missing refreshToken/expiresAt = undefined')
-    return Promise.resolve()
+  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-incomplete-', blob), async () => {
+    assert.equal(await readClaudeCodeCredentials(), undefined, 'missing refreshToken/expiresAt = undefined')
   })
 })
 
@@ -197,9 +193,8 @@ test('readClaudeCodeCredentials returns undefined for EMPTY-string credentials',
       scopes: ['user:profile'], subscriptionType: 'pro',
     },
   })
-  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-empty-str-', blob), () => {
-    assert.equal(readClaudeCodeCredentials(), undefined, 'empty tokens = undefined')
-    return Promise.resolve()
+  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-empty-str-', blob), async () => {
+    assert.equal(await readClaudeCodeCredentials(), undefined, 'empty tokens = undefined')
   })
 })
 
@@ -207,11 +202,10 @@ test('readClaudeCodeCredentials reads bare fields (no claudeAiOauth wrapper)', n
   const blob = JSON.stringify({
     accessToken: 'bare-at', refreshToken: 'bare-rt', expiresAt: Date.now() + 3600_000,
   })
-  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-bare-', blob), () => {
-    const session = readClaudeCodeCredentials()
+  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-bare-', blob), async () => {
+    const session = await readClaudeCodeCredentials()
     assert.ok(session !== undefined, 'bare fields are accepted too')
     assert.equal(session.accessToken, 'bare-at')
-    return Promise.resolve()
   })
 })
 

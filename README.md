@@ -104,14 +104,7 @@ Or install the sources from GitHub:
 dsh plugin --profile web add github:V1ki/dsh-plugin-subscriptions
 ```
 
-pnpm will ask you to allow this package's build script on first install (git installs fetch sources, not built artifacts); add the printed key to the profile's `pnpm-workspace.yaml`:
-
-```yaml
-allowBuilds:
-  dsh-plugin-subscriptions: true
-```
-
-and re-run the `add`. Only grant this to packages you trust — it runs the package's code at install time.
+The repository ships the built `lib/`, so a git install runs no build script and needs no `allowBuilds` entry.
 
 From a local checkout instead:
 
@@ -136,7 +129,7 @@ Installed from npm:
 dsh plugin --profile web update --latest dsh-plugin-subscriptions
 ```
 
-Installed from GitHub: re-run the same `add github:V1ki/dsh-plugin-subscriptions` command — it re-fetches the sources and rebuilds. A linked local checkout just needs `git pull && pnpm build` in the checkout.
+Installed from GitHub: re-run the same `add github:V1ki/dsh-plugin-subscriptions` command — it re-fetches the repository, including the committed build. A linked local checkout just needs `git pull && pnpm build` in the checkout.
 
 Either way, restart `dsh web` afterwards so the new version loads.
 
@@ -282,7 +275,7 @@ pnpm build     # tsc (lib/) + tsdown (lib/client.js browser bundle)
 pnpm test      # node --test over compiled unit specs
 ```
 
-`prepare` (used by git installs) runs `tsdown.prepare.config.ts`: a self-contained bundle build of both faces with all `@deepseek-ai/*` specifiers external — they resolve from the dsh installation at runtime, so this package never carries a second cordis copy.
+`lib/` is committed so git installs need no build step: rebuild with `pnpm build` and commit `lib/` after every source change or upstream merge.
 
 After `pnpm build`, restart `dsh web` to pick up changes.
 

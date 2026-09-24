@@ -103,14 +103,7 @@ dsh plugin --profile web add dsh-plugin-subscriptions
 dsh plugin --profile web add github:V1ki/dsh-plugin-subscriptions
 ```
 
-首次安装 pnpm 会要求允许该包的构建脚本(git 安装拉取的是源码而非构建产物);把打印出的包名加进 profile 的 `pnpm-workspace.yaml`:
-
-```yaml
-allowBuilds:
-  dsh-plugin-subscriptions: true
-```
-
-然后重新执行 `add`。该授权会在安装时执行包的代码,只授给你信任的来源。
+仓库自带构建好的 `lib/`,git 安装不执行构建脚本,也不需要 `allowBuilds` 配置。
 
 本地检出安装:
 
@@ -135,7 +128,7 @@ npm 安装的:
 dsh plugin --profile web update --latest dsh-plugin-subscriptions
 ```
 
-GitHub 安装的:重新执行一遍 `add github:V1ki/dsh-plugin-subscriptions` —— 会重新拉取源码并构建。link 的本地检出只需在检出目录里 `git pull && pnpm build`。
+GitHub 安装的:重新执行一遍 `add github:V1ki/dsh-plugin-subscriptions` —— 会重新拉取仓库(含已提交的构建产物)。link 的本地检出只需在检出目录里 `git pull && pnpm build`。
 
 无论哪种方式,更新后都要重启 `dsh web` 才会加载新版本。
 
@@ -280,7 +273,7 @@ pnpm build     # tsc(lib/)+ tsdown(lib/client.js 浏览器 bundle)
 pnpm test      # 编译后跑 node --test 单测
 ```
 
-`prepare`(git 安装时触发)执行 `tsdown.prepare.config.ts`:自包含打包两个面,所有 `@deepseek-ai/*` 依赖外部化 —— 运行时从 dsh 安装解析,保证不会引入第二份 cordis。
+`lib/` 已提交进仓库,git 安装无需构建:每次改源码或合并上游后执行 `pnpm build` 并提交 `lib/`。
 
 改了代码后 `pnpm build` 并重启 `dsh web` 生效。
 

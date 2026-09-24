@@ -19,6 +19,7 @@ import { httpLlmError } from '../providers/common.js'
 import { AccountTokenManager } from '../providers/accounts.js'
 import type { FetchFn } from '../providers/common.js'
 import { proxiedFetch } from '../http.js'
+import { isRecord } from '../providers/rate-limit.js'
 
 /** Endpoint the generation request is posted to. */
 export const VIDEO_GENERATE_URL = 'https://api.x.ai/v1/videos/generations'
@@ -88,10 +89,6 @@ export function buildVideoGenerateBody(args: {
     ...args.resolution === undefined ? {} : { resolution: args.resolution },
     ...imageUrl === undefined || imageUrl.length === 0 ? {} : { image: { url: imageUrl } },
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

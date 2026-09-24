@@ -12,6 +12,7 @@ import { httpLlmError } from '../providers/common.js'
 import { AccountTokenManager } from '../providers/accounts.js'
 import type { FetchFn } from '../providers/common.js'
 import { proxiedFetch } from '../http.js'
+import { isRecord } from '../providers/rate-limit.js'
 
 /** Endpoint the search request is posted to. */
 export const X_SEARCH_URL = 'https://api.x.ai/v1/responses'
@@ -77,10 +78,6 @@ function normalizeHandles(value: string[] | undefined, field: string): string[] 
 interface XSearchOutput {
   answer: string
   citations: string[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

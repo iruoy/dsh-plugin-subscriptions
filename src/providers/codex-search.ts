@@ -5,6 +5,7 @@ import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 import type { CodexSession } from '../auth/store.js'
 import type { AccountTokenManager } from '../providers/accounts.js'
+import { isRecord } from './rate-limit.js'
 
 export const CODEX_SEARCH_PROVIDER_ID = 'codex'
 export const CODEX_SEARCH_URL = 'https://chatgpt.com/backend-api/codex/alpha/search'
@@ -113,13 +114,13 @@ export class CodexWebSearchProvider implements WebSearchProvider {
 }
 
 export function normalizeCodexSearchResponse(value: unknown): WebSearchResult {
-  if (!record(value) || typeof value.output !== 'string') {
+  if (!isRecord(value) || typeof value.output !== 'string') {
     throw new WebError('Codex Web Search returned an unusable response', 'CODEX_SEARCH_RESPONSE')
   }
   const sources: WebSearchSource[] = []
   const seen = new Set<string>()
   if (Array.isArray(value.results)) for (const candidate of value.results) {
-    if (!record(candidate)) continue
+    if (!isRecord(candidate)) continue
     const rawUrl = safeString(candidate.url, 8192) ?? safeString(candidate.source_url, 8192)
     const url = rawUrl === undefined ? undefined : httpUrl(rawUrl)
     if (url === undefined || seen.has(url)) continue
@@ -131,9 +132,6 @@ export function normalizeCodexSearchResponse(value: unknown): WebSearchResult {
   return { content: value.output, sources, truncated: false }
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 function safeString(value: unknown, max: number): string | undefined {
   if (typeof value !== 'string') return undefined
   const text = value.trim()

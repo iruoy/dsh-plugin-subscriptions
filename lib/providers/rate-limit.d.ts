@@ -69,6 +69,8 @@ export declare function resetInstantFromHeader(response: Response, name: string,
  * @returns epoch milliseconds of the reset, or undefined when absent or unusable.
  */
 export declare function retryAfterInstant(response: Response, now: number): number | undefined;
+/** Whether a parsed JSON value is a plain object (not null, not an array). */
+export declare function isRecord(value: unknown): value is Record<string, unknown>;
 /**
  * Parse a response body as JSON without throwing on the non-JSON bodies
  * providers occasionally return under load (an HTML gateway page, say).

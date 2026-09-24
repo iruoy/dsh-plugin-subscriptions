@@ -192,8 +192,11 @@ export declare class CodexAdapter extends LlmAdapter {
     private discovered;
     /** Whether the discovered catalog advertises a fast tier for this model. */
     supportsFastTier(model: string, account?: string): Promise<boolean>;
-    /** Ids of every discovered model with a fast tier (the Speed toggle's visibility list). */
-    fastCapableModels(): Promise<string[]>;
+    /**
+     * Ids of every discovered model with a fast tier (the Speed toggle's visibility list).
+     * @param account - limit to one account's catalog; every account when omitted.
+     */
+    fastCapableModels(account?: string): Promise<string[]>;
     resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo>;
     /** Capability resolution of the provider's own models (the pool resolves members here). */
     resolveOwnModel(provider: string, model: string, account?: string): Promise<LlmResolvedModelInfo>;

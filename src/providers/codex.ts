@@ -785,13 +785,16 @@ export class CodexAdapter extends LlmAdapter {
     return (await this.discovered(model, account))?.fastTier === true
   }
 
-  /** Ids of every discovered model with a fast tier (the Speed toggle's visibility list). */
-  async fastCapableModels(): Promise<string[]> {
+  /**
+   * Ids of every discovered model with a fast tier (the Speed toggle's visibility list).
+   * @param account - limit to one account's catalog; every account when omitted.
+   */
+  async fastCapableModels(account?: string): Promise<string[]> {
     if (!this.options.discovery) return []
     // Not logged in → no fast models, so the Speed toggle hides after logout
     // (mirrors the listModels guard above). Union every account: a fast-capable
     // model only the non-default lists (e.g. gpt-5.6-sol) must still show Speed.
-    const accounts = (await this.options.tokens.list()).map(entry => entry.key)
+    const accounts = account === undefined ? (await this.options.tokens.list()).map(entry => entry.key) : [account]
     if (accounts.length === 0) return []
     const seen = new Set<string>()
     const ids: string[] = []

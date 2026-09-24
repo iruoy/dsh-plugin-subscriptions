@@ -20,6 +20,7 @@ import { AccountTokenManager } from '../providers/accounts.js'
 import type { FetchFn } from '../providers/common.js'
 import { proxiedFetch } from '../http.js'
 import { isRecord } from '../providers/rate-limit.js'
+import { truncate } from './registration.js'
 
 /** Endpoint the generation request is posted to. */
 export const VIDEO_GENERATE_URL = 'https://api.x.ai/v1/videos/generations'
@@ -152,11 +153,6 @@ export function videosDirectory(): string {
 function videoFileName(): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   return `video-${stamp}-${Math.random().toString(36).slice(2, 8)}.mp4`
-}
-
-/** Bound a call-card title's prompt. */
-function truncate(text: string, max = 60): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
 /** Abort-aware sleep between two polls. */

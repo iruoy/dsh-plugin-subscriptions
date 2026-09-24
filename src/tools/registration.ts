@@ -7,6 +7,11 @@ export const TOOL_ALIASES = {
   image_generate: 'dsh_subscriptions_image_generate',
 } as const
 
+/** Shorten a tool-call card title to `max` characters, ending in an ellipsis. */
+export function truncate(text: string, max = 60): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
+}
+
 export interface ToolRegistry {
   register(definition: ToolDefinition): () => void
 }

@@ -13,6 +13,7 @@ import { AccountTokenManager } from '../providers/accounts.js'
 import type { FetchFn } from '../providers/common.js'
 import { proxiedFetch } from '../http.js'
 import { isRecord } from '../providers/rate-limit.js'
+import { truncate } from './registration.js'
 
 /** Endpoint the search request is posted to. */
 export const X_SEARCH_URL = 'https://api.x.ai/v1/responses'
@@ -115,11 +116,6 @@ export function parseXSearchResponse(payload: unknown): XSearchOutput {
   }
   if (answer.length === 0) answer = parts.join('\n\n')
   return { answer, citations }
-}
-
-/** Bound a call-card title's query. */
-function truncate(text: string, max = 60): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
 /**

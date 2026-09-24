@@ -28,6 +28,7 @@ import { codexRateLimitReset } from '../providers/codex.js'
 import { grokRateLimitReset } from '../providers/grok.js'
 import type { FetchFn } from '../providers/common.js'
 import { proxiedFetch } from '../http.js'
+import { truncate } from './registration.js'
 
 /** Endpoint the codex generation request is posted to. */
 export const IMAGE_GENERATE_URL = 'https://chatgpt.com/backend-api/codex/images/generations'
@@ -233,11 +234,6 @@ const MEDIA_TYPE_EXTENSIONS: Record<GeneratedImageMediaType, string> = {
 function imageFileName(index: number, mediaType: GeneratedImageMediaType): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   return `image-${stamp}-${Math.random().toString(36).slice(2, 8)}-${index}.${MEDIA_TYPE_EXTENSIONS[mediaType]}`
-}
-
-/** Bound a call-card title's prompt. */
-function truncate(text: string, max = 60): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
 /**

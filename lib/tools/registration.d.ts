@@ -5,6 +5,8 @@ export declare const TOOL_ALIASES: {
     readonly video_generate: "dsh_subscriptions_video_generate";
     readonly image_generate: "dsh_subscriptions_image_generate";
 };
+/** Shorten a tool-call card title to `max` characters, ending in an ellipsis. */
+export declare function truncate(text: string, max?: number): string;
 export interface ToolRegistry {
     register(definition: ToolDefinition): () => void;
 }

@@ -53,6 +53,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\" && tsc && tsdown",
     "test": "tsc -p tsconfig.test.json && node --test \"lib-test/test/**/*.spec.js\"",
+    "prepare": "tsdown -c tsdown.prepare.config.ts",
     "prepublishOnly": "pnpm build && pnpm test"
   },
   "peerDependencies": {

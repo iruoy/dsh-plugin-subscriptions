@@ -104,7 +104,14 @@ Or install the sources from GitHub:
 dsh plugin --profile web add github:V1ki/dsh-plugin-subscriptions
 ```
 
-The repository ships the built `lib/`, so a git install runs no build script and needs no `allowBuilds` entry.
+pnpm will ask you to allow this package's build script on first install (git installs fetch sources, not built artifacts); add the printed key to the profile's `pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  dsh-plugin-subscriptions: true
+```
+
+and re-run the `add`. Only grant this to packages you trust — it runs the package's code at install time.
 
 From a local checkout instead:
 
@@ -129,7 +136,7 @@ Installed from npm:
 dsh plugin --profile web update --latest dsh-plugin-subscriptions
 ```
 
-Installed from GitHub: re-run the same `add github:V1ki/dsh-plugin-subscriptions` command — it re-fetches the repository, including the committed build. A linked local checkout just needs `git pull` in the checkout.
+Installed from GitHub: re-run the same `add github:V1ki/dsh-plugin-subscriptions` command — it re-fetches the sources and rebuilds. A linked local checkout just needs `git pull && pnpm build` in the checkout.
 
 Either way, restart `dsh web` afterwards so the new version loads.
 
@@ -227,7 +234,7 @@ Selection is sticky per session (prompt caches survive) with two strategies: `pr
 
 A subscription plan is rate-limit shaped by design — a 5-hour session window, a weekly one, and on some plans a per-model weekly one — so a 429 is not a dead end: the window reopens at a time the provider discloses. Each route reads that reset off its own 429 and turns it into that account's pool cooldown (see Model pools above) instead of a fixed 5-minute guess.
 
-Only a signal that names the window which actually rejected the request is read: Anthropic's `anthropic-ratelimit-unified-reset`, the seconds Codex puts on a `usage_limit_reached` rejection, the delay xAI names in the error body, the quota reset Antigravity puts in its Google error details (`quotaResetTimeStamp`, `quotaResetDelay`, `retryDelay`), or a plain `retry-after`. The per-bucket rollover snapshots (`anthropic-ratelimit-{requests,tokens,…}-reset`, `x-codex-*-reset-after-seconds`, `x-ratelimit-reset-*`) ride every response and cannot say which bucket refused — the earliest is usually one that still had room — so a 429 carrying nothing else is logged through the plugin's warning sink, naming the headers and the head of the body, rather than parking the turn (or the pool cooldown) on a guess.
+Only a signal that names the window which actually rejected the request is read: Anthropic's `anthropic-ratelimit-unified-reset`, the seconds Codex puts on a `usage_limit_reached` rejection, the delay xAI names in the error body, or a plain `retry-after`. The per-bucket rollover snapshots (`anthropic-ratelimit-{requests,tokens,…}-reset`, `x-codex-*-reset-after-seconds`, `x-ratelimit-reset-*`) ride every response and cannot say which bucket refused — the earliest is usually one that still had room — so a 429 carrying nothing else is logged through the plugin's warning sink, naming the headers and the head of the body, rather than parking the turn (or the pool cooldown) on a guess.
 
 Reading is confined to a 429. Every other failure keeps its short local backoff: those same headers ride a transient 500 too, and honouring them there would hold a turn for the rest of the window over an overload that clears in a second.
 
@@ -275,7 +282,7 @@ pnpm build     # tsc (lib/) + tsdown (lib/client.js browser bundle)
 pnpm test      # node --test over compiled unit specs
 ```
 
-`lib/` is committed so git installs need no build step: rebuild with `pnpm build` and commit `lib/` after every source change or upstream merge.
+`prepare` (used by git installs) runs `tsdown.prepare.config.ts`: a self-contained bundle build of both faces with all `@deepseek-ai/*` specifiers external — they resolve from the dsh installation at runtime, so this package never carries a second cordis copy.
 
 After `pnpm build`, restart `dsh web` to pick up changes.
 

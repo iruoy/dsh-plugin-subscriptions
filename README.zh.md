@@ -103,7 +103,14 @@ dsh plugin --profile web add dsh-plugin-subscriptions
 dsh plugin --profile web add github:V1ki/dsh-plugin-subscriptions
 ```
 
-仓库自带构建好的 `lib/`,git 安装不执行构建脚本,也不需要 `allowBuilds` 配置。
+首次安装 pnpm 会要求允许该包的构建脚本(git 安装拉取的是源码而非构建产物);把打印出的包名加进 profile 的 `pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  dsh-plugin-subscriptions: true
+```
+
+然后重新执行 `add`。该授权会在安装时执行包的代码,只授给你信任的来源。
 
 本地检出安装:
 
@@ -128,7 +135,7 @@ npm 安装的:
 dsh plugin --profile web update --latest dsh-plugin-subscriptions
 ```
 
-GitHub 安装的:重新执行一遍 `add github:V1ki/dsh-plugin-subscriptions` —— 会重新拉取仓库(含已提交的构建产物)。link 的本地检出只需在检出目录里 `git pull`。
+GitHub 安装的:重新执行一遍 `add github:V1ki/dsh-plugin-subscriptions` —— 会重新拉取源码并构建。link 的本地检出只需在检出目录里 `git pull && pnpm build`。
 
 无论哪种方式,更新后都要重启 `dsh web` 才会加载新版本。
 
@@ -225,7 +232,7 @@ Antigravity 为 Gemini 使用 `parametersJsonSchema`，为 Claude/GPT-OSS 使用
 
 订阅套餐天然是按限流窗口计费的 —— 5 小时会话窗口、周窗口，部分套餐还有按模型的周窗口 —— 所以 429 并不是终点：窗口会在 provider 自己告知的时刻重开。每条路由从自己的 429 里读出这个时刻，把它变成该账号在模型池里的冷却时长（见上文「模型池」），而不是固定猜测的 5 分钟。
 
-只有能指明「是哪个窗口拒绝了这次请求」的信号才会被读取：Anthropic 的 `anthropic-ratelimit-unified-reset`、Codex 在 `usage_limit_reached` 上给出的秒数、xAI 在错误体里给出的延迟、Antigravity 在 Google 错误详情里给出的配额重开时刻（`quotaResetTimeStamp`、`quotaResetDelay`、`retryDelay`），或通用的 `retry-after`。各分桶的滚动快照（`anthropic-ratelimit-{requests,tokens,…}-reset`、`x-codex-*-reset-after-seconds`、`x-ratelimit-reset-*`）每个响应上都有，说不出是哪个桶拒绝的 —— 其中最早的那个往往正是还有余量的桶 —— 所以只带这些的 429 会通过插件的告警回调打印出相关 header 与响应体开头，而不是照着猜测把本轮(或池冷却)挂起。
+只有能指明「是哪个窗口拒绝了这次请求」的信号才会被读取：Anthropic 的 `anthropic-ratelimit-unified-reset`、Codex 在 `usage_limit_reached` 上给出的秒数、xAI 在错误体里给出的延迟，或通用的 `retry-after`。各分桶的滚动快照（`anthropic-ratelimit-{requests,tokens,…}-reset`、`x-codex-*-reset-after-seconds`、`x-ratelimit-reset-*`）每个响应上都有，说不出是哪个桶拒绝的 —— 其中最早的那个往往正是还有余量的桶 —— 所以只带这些的 429 会通过插件的告警回调打印出相关 header 与响应体开头，而不是照着猜测把本轮(或池冷却)挂起。
 
 读取只发生在 429 上。其他失败仍走各自的短本地退避:同样这些 header 也会出现在瞬时 500 上,在那里照办等于为一次一秒就恢复的过载把本轮挂满整个窗口。
 
@@ -273,7 +280,7 @@ pnpm build     # tsc(lib/)+ tsdown(lib/client.js 浏览器 bundle)
 pnpm test      # 编译后跑 node --test 单测
 ```
 
-`lib/` 已提交进仓库,git 安装无需构建:每次改源码或合并上游后执行 `pnpm build` 并提交 `lib/`。
+`prepare`(git 安装时触发)执行 `tsdown.prepare.config.ts`:自包含打包两个面,所有 `@deepseek-ai/*` 依赖外部化 —— 运行时从 dsh 安装解析,保证不会引入第二份 cordis。
 
 改了代码后 `pnpm build` 并重启 `dsh web` 生效。
 

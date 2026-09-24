@@ -231,6 +231,17 @@ test('first-class harness tool messages become correlated function responses', (
   })
 })
 
+test('first-class harness tool errors keep their error flag', () => {
+  const messages: TranslatableMessage[] = [
+    message('assistant', [{ type: 'tool-call', id: ToolCallId('failed-call'), name: 'bash', arguments: '{}' }]),
+    { role: 'tool', toolCallId: 'failed-call', isError: true, content: [{ type: 'text', text: 'boom' }] },
+  ]
+  const parts = toAntigravityRequest(options([]), messages, 'project-123').request.contents.flatMap(entry => entry.parts)
+  assert.deepEqual(parts[1].functionResponse, {
+    id: 'failed-call', name: 'bash', response: { output: 'boom', isError: true },
+  })
+})
+
 test('stream translator emits reasoning, text, tool call, usage, finish, and replay signature', () => {
   const translator = new AntigravityStreamTranslator()
   const chunks = translator.push({

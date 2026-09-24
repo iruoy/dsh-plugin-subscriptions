@@ -143,6 +143,20 @@ test('toResponsesInput: first-class tool images follow the function output', () 
   assert.equal((input[1].content as Record<string, unknown>[])[1].type, 'input_image')
 })
 
+test('tool-role messages correlate through tool_call_id or a tool source', () => {
+  const messages: TranslatableMessage[] = [
+    message('assistant', [toolCall('imported', 'bash', '{}'), toolCall('sourced', 'bash', '{}')]),
+    { role: 'tool', tool_call_id: 'imported', content: [{ type: 'image', mediaType: 'image/png', dataBase64: 'aGk=' }] },
+    { role: 'tool', source: { kind: 'tool', callId: ToolCallId('sourced') }, content: [{ type: 'text', text: 'ok' }] },
+  ]
+  const { input } = toResponsesInput(messages)
+  assert.deepEqual(input.slice(2, 4), [
+    { type: 'function_call_output', call_id: 'imported', output: '' },
+    { type: 'function_call_output', call_id: 'sourced', output: 'ok' },
+  ])
+  assert.equal(((input[4].content as Record<string, unknown>[])[0]).text, 'Images from tool result imported:')
+})
+
 test('resolveImages preserves first-class tool call ids', async () => {
   const ref = { attachmentId: 'image-1', mediaType: 'image/png', bytes: 2, width: 1, height: 1 }
   const result = {

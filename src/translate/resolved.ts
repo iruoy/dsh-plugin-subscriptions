@@ -9,6 +9,7 @@
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { ToolCallId } from '../compat.js'
 
 /** An image block with its bytes resolved to inline base64 for the wire. */
 export interface ResolvedImagePart {
@@ -28,6 +29,33 @@ export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'
 }
 
 /**
+ * Fold first-class `role: 'tool'` messages (DSH 0.1.7) into the user-role
+ * `tool-result` block every translator already speaks, so each wire handles
+ * one tool-result shape and keeps its correlation id and error flag.
+ * @param messages - ordered conversation messages.
+ * @returns the same messages, with tool-role ones rewritten as user tool results.
+ */
+export function withToolResultBlocks(messages: readonly TranslatableMessage[]): readonly TranslatableMessage[] {
+  if (!messages.some(message => message.role === 'tool')) return messages
+  return messages.map((message): TranslatableMessage => {
+    if (message.role !== 'tool') return message
+    const callId = message.toolCallId ?? message.tool_call_id
+      ?? (message.source?.kind === 'tool' ? String(message.source.callId) : undefined)
+    if (callId === undefined) throw new LlmError('tool result has no call id', 'INVALID_REQUEST')
+    return {
+      role: 'user',
+      ...message.source === undefined ? {} : { source: message.source },
+      content: [{
+        type: 'tool-result',
+        toolCallId: ToolCallId(callId),
+        content: message.content,
+        ...message.isError === undefined ? {} : { isError: message.isError },
+      }],
+    }
+  })
+}
+
+/**
  * Wires with text-only tool outputs receive images in a following user turn.
  * Defer that turn until all consecutive user messages have been processed:
  * parallel tool results can arrive in separate harness messages, and a user
@@ -40,15 +68,9 @@ export function withToolResultImages(messages: readonly TranslatableMessage[]): 
     if (images.length > 0) out.push({ role: 'user', content: images })
     images = []
   }
-  for (const message of messages) {
+  for (const message of withToolResultBlocks(messages)) {
     if (message.role === 'assistant') flush()
     out.push(message)
-    if (message.role === 'tool') {
-      const parts = message.content.filter((part): part is ResolvedImagePart => part.type === 'image' && 'dataBase64' in part)
-      if (parts.length > 0) {
-        images.push({ type: 'text', text: `Images from tool result ${String(message.toolCallId)}:` }, ...parts)
-      }
-    }
     for (const block of message.content) {
       if (block.type !== 'tool-result') continue
       const parts = block.content.filter((part): part is ResolvedImagePart => part.type === 'image' && 'dataBase64' in part)

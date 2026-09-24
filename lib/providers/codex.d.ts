@@ -4,7 +4,7 @@
  * endpoint.
  */
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
-import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { FlowSpec } from '../auth/oauth-flow.js';
 import type { CodexSession } from '../auth/store.js';
 import type { PoolAdapter } from './pool.js';
@@ -169,8 +169,6 @@ export declare function reconcileResponsesToolCalls(input: ResponsesRequestInput
  * matching the CLI (it never sends an explicit standard tier).
  */
 export declare function codexRequestBody(options: GenerateOptions, resolved: ResponsesRequestInput, fast: boolean): Record<string, unknown>;
-/** Adapt the current harness's first-class tool messages at the Codex boundary. */
-export declare function projectCodexMessages(messages: readonly Message[]): Message[];
 /** Codex wire adapter: one instance serves the `codex` provider route. */
 export declare class CodexAdapter extends LlmAdapter {
     private readonly options;

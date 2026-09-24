@@ -22,6 +22,14 @@ export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'
     content: readonly TranslatableBlock[];
 }
 /**
+ * Fold first-class `role: 'tool'` messages (DSH 0.1.7) into the user-role
+ * `tool-result` block every translator already speaks, so each wire handles
+ * one tool-result shape and keeps its correlation id and error flag.
+ * @param messages - ordered conversation messages.
+ * @returns the same messages, with tool-role ones rewritten as user tool results.
+ */
+export declare function withToolResultBlocks(messages: readonly TranslatableMessage[]): readonly TranslatableMessage[];
+/**
  * Wires with text-only tool outputs receive images in a following user turn.
  * Defer that turn until all consecutive user messages have been processed:
  * parallel tool results can arrive in separate harness messages, and a user

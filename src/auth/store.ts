@@ -15,8 +15,8 @@
 
 import { createHash } from 'node:crypto'
 import { decodeJwtPayload } from './jwt.js'
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile, rename, rm } from 'node:fs/promises'
+import { writePrivateJson } from '../private-json.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 
 /** Provider routes this plugin can serve. */
@@ -338,7 +338,7 @@ export async function loadStore(path = authFilePath()): Promise<SessionMap> {
       throw legacyError
     }
     const migrated = parseStore(text, legacyAuthFilePath())
-    await writeStore(migrated, path)
+    await writePrivateJson(path, migrated)
     await rm(legacyAuthFilePath(), { force: true })
     return migrated
   }
@@ -421,22 +421,6 @@ function isValidSessionShape(value: unknown): boolean {
   return typeof entry.accessToken === 'string' && entry.accessToken.length > 0
     && typeof entry.refreshToken === 'string' && entry.refreshToken.length > 0
     && typeof entry.expiresAt === 'number' && Number.isFinite(entry.expiresAt)
-}
-
-/** Persist the whole store atomically with owner-only permissions. */
-async function writeStore(store: SessionMap, path: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
-  try {
-    await writeFile(tmp, JSON.stringify(store, null, 2), { mode: 0o600 })
-    // An existing destination keeps its old mode through rename on some
-    // filesystems; enforce 0600 on the source before the swap.
-    await chmod(tmp, 0o600)
-    await rename(tmp, path)
-  } catch (error) {
-    await rm(tmp, { force: true })
-    throw error
-  }
 }
 
 /**
@@ -544,7 +528,7 @@ export async function saveAccountSession<K extends ProviderId>(
       default: entry?.default ?? account,
       accounts: { ...entry?.accounts, [account]: session },
     } satisfies ProviderAccounts<SessionOf<K>>
-    await writeStore(store, path)
+    await writePrivateJson(path, store)
   })
 }
 
@@ -577,7 +561,7 @@ export async function deleteAccountSession(
         accounts,
       }
     }
-    await writeStore(store, path)
+    await writePrivateJson(path, store)
   })
 }
 
@@ -600,6 +584,6 @@ export async function setDefaultAccount(
       throw new Error(`no ${provider} account "${account}" is logged in`)
     }
     ;(store as Record<string, unknown>)[provider] = { ...entry, default: account }
-    await writeStore(store, path)
+    await writePrivateJson(path, store)
   })
 }

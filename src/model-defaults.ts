@@ -16,8 +16,8 @@
  * malformed file reads as empty and is rewritten on the next save, never
  * taking the plugin down with it.
  */
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { writePrivateJson } from './private-json.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { PROVIDER_IDS, type ProviderId } from './auth/store.js'
 
@@ -115,21 +115,7 @@ async function ensureReady(): Promise<void> {
   return ready
 }
 
-/** Persist a snapshot atomically with owner-only permissions. */
-async function atomicPersist(defaults: ModelDefaults, path: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
-  try {
-    await writeFile(tmp, JSON.stringify(defaults, null, 2), { mode: 0o600 })
-    await chmod(tmp, 0o600)
-    await rename(tmp, path)
-  } catch (error) {
-    await rm(tmp, { force: true })
-    throw error
-  }
-}
-
-let persistDefaults: (defaults: ModelDefaults, path: string) => Promise<void> = atomicPersist
+let persistDefaults: (defaults: ModelDefaults, path: string) => Promise<void> = (defaults, path) => writePrivateJson(path, defaults)
 
 /**
  * Clone one provider section, or undefined when nothing is configured for it.
@@ -238,7 +224,7 @@ export async function resetModelDefaultsForTests(): Promise<void> {
   ready = undefined
   loadError = undefined
   writeChain = Promise.resolve()
-  persistDefaults = atomicPersist
+  persistDefaults = (defaults, path) => writePrivateJson(path, defaults)
 }
 
 /**

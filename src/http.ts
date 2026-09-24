@@ -14,9 +14,9 @@
  * browser/system proxy and is outside this module's reach.
  */
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
+import { writePrivateJson } from './private-json.js'
 import { getDefaultAutoSelectFamilyAttemptTimeout, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net'
-import { dirname } from 'node:path'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 
 /**
@@ -318,20 +318,6 @@ async function ensureReady(): Promise<ProxyConfig> {
   return ready
 }
 
-/** Persist a config atomically with owner-only permissions, then apply it. */
-async function persistConfig(cfg: ProxyConfig, path: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
-  try {
-    await writeFile(tmp, JSON.stringify(cfg, null, 2), { mode: 0o600 })
-    await chmod(tmp, 0o600)
-    await rename(tmp, path)
-  } catch (error) {
-    await rm(tmp, { force: true })
-    throw error
-  }
-}
-
 /**
  * Close the live agent and drop the cached config. Test-only: lets a suite
  *  unwind the agent's keep-alive sockets before the process exits.
@@ -383,7 +369,7 @@ export async function proxySetConfig(input: ProxyInput): Promise<ProxyConfigView
     ...password === undefined ? {} : { password },
     bypass: input.bypass ?? current.bypass,
   })
-  await persistConfig(next, proxyFilePath())
+  await writePrivateJson(proxyFilePath(), next)
   await applyConfig(next)
   return proxyGetConfig()
 }

@@ -49,7 +49,7 @@ export function toChatMessages(
       continue
     }
     if (message.role === 'developer') {
-      const content = message.content.filter(block => block.type === 'text').map(block => block.text).join('')
+      const content = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
       if (content.length > 0) out.push({ role: 'developer', content })
       continue
     }

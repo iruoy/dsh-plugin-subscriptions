@@ -34,11 +34,13 @@ function message(
   role: Message['role'],
   content: ContentBlock[],
   source?: MessageSource,
-): Message {
+): Message & TranslatableMessage {
   const resolvedSource = source ?? (role === 'assistant'
     ? { kind: 'model' as const, provider: 'codex', model: 'gpt-5.1-codex' }
     : { kind: 'user' as const })
-  return { id: MessageId(`m-${++messageCounter}`), role, content, source: resolvedSource }
+  // Translator fixtures never carry unresolved images, so the message is
+  // valid translator input as-is.
+  return { id: MessageId(`m-${++messageCounter}`), role, content, source: resolvedSource } as Message & TranslatableMessage
 }
 
 function toolCall(id: string, name: string, args: string): ContentBlock {
@@ -290,12 +292,6 @@ test('toResponsesInput: resolved image parts become input_image data URLs', () =
       { type: 'input_image', image_url: 'data:image/png;base64,aGk=' },
     ],
   }])
-  // An unresolved ImageBlock (attachment reference only) is skipped.
-  const unresolved = toResponsesInput([{
-    role: 'user',
-    content: [{ type: 'image', attachment: { attachmentId: 'x' } } as never],
-  }])
-  assert.deepEqual(unresolved.input, [])
 })
 
 test('resolveImages: passthrough, loud failure without attachments, and resolution', async () => {

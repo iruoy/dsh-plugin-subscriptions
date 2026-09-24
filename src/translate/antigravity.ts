@@ -151,9 +151,7 @@ export function toAntigravityContents(messages: readonly TranslatableMessage[], 
           break
         }
         case 'image':
-          if ('dataBase64' in block) {
-            parts.push({ inlineData: { mimeType: block.mediaType, data: block.dataBase64 } })
-          }
+          parts.push({ inlineData: { mimeType: block.mediaType, data: block.dataBase64 } })
           break
         case 'tool-call': {
           callNames.set(String(block.id), block.name)

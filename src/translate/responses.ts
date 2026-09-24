@@ -63,9 +63,7 @@ export interface ReasoningReplayItem {
  * reasoning back as the provider's completed reasoning items (id, summary,
  * and the ENCRYPTED payload), so `reasoningFor` may resolve per-call
  * captured items, replayed ahead of the matching function_call item. Images
- * must arrive pre-resolved
- * ({@link TranslatableMessage}); an unresolved ImageBlock is skipped because
- * its bytes are unreachable here.
+ * arrive pre-resolved ({@link TranslatableMessage}).
  * @param messages - ordered conversation messages with resolved images.
  * @param system - explicit system prompt, which takes precedence.
  * @param reasoningFor - resolves one tool call id to the COMPLETED reasoning
@@ -136,14 +134,10 @@ export function toResponsesInput(
           })
           break
         case 'image':
-          if ('dataBase64' in block) {
-            content.push({
-              type: 'input_image',
-              image_url: `data:${block.mediaType};base64,${block.dataBase64}`,
-            })
-          }
-          // An unresolved ImageBlock carries only an attachment reference; the
-          // adapter resolves images before translation, so this is skipped.
+          content.push({
+            type: 'input_image',
+            image_url: `data:${block.mediaType};base64,${block.dataBase64}`,
+          })
           break
         default:
           // reasoning's text form is not replayed (encrypted replay rides

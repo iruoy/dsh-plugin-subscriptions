@@ -56,7 +56,9 @@ function routed(routes: Record<string, unknown | Response>, calls: RecordedCall[
   }
 }
 
-function message(role: Message['role'], content: ContentBlock[], source?: Message['source']): Message {
+function message(role: Message['role'], content: ContentBlock[], source?: Message['source']): Message & TranslatableMessage {
+  // Translator fixtures never carry unresolved images, so the message is
+  // valid translator input as-is.
   return {
     id: MessageId(`m-${Math.random().toString(36).slice(2)}`),
     role,
@@ -64,7 +66,7 @@ function message(role: Message['role'], content: ContentBlock[], source?: Messag
     source: source ?? (role === 'assistant'
       ? { kind: 'model', provider: 'antigravity', model: 'gemini-3-flash' }
       : { kind: 'user' }),
-  }
+  } as Message & TranslatableMessage
 }
 
 function options(messages: Message[]): GenerateOptions {

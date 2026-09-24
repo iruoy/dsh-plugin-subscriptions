@@ -27,11 +27,13 @@ function message(
   role: Message['role'],
   content: ContentBlock[],
   source?: MessageSource,
-): Message {
+): Message & TranslatableMessage {
   const resolvedSource = source ?? (role === 'assistant'
     ? { kind: 'model' as const, provider: 'copilot', model: 'gpt-4.1' }
     : { kind: 'user' as const })
-  return { id: MessageId(`m-${++messageCounter}`), role, content, source: resolvedSource }
+  // Translator fixtures never carry unresolved images, so the message is
+  // valid translator input as-is.
+  return { id: MessageId(`m-${++messageCounter}`), role, content, source: resolvedSource } as Message & TranslatableMessage
 }
 
 function toolCall(id: string, name: string, args: string): ContentBlock {

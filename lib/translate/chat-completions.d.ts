@@ -11,8 +11,7 @@ import type { TranslatableMessage } from './resolved.js';
  * Convert harness messages into chat completions `messages`. System-role
  * messages become one leading `system` message; an explicit `system` argument
  * wins over them when both exist. Reasoning blocks are not replayed (matching
- * the Responses translator). Images must arrive pre-resolved; an unresolved
- * ImageBlock is skipped because its bytes are unreachable here. A user message
+ * the Responses translator). Images arrive pre-resolved. A user message
  * carrying only text collapses to a plain string body (some endpoints still
  * reject content-part arrays); tool results become separate `tool` messages.
  * @param messages - ordered conversation messages with resolved images.

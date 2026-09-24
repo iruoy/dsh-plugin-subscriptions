@@ -7,7 +7,7 @@
  */
 
 import { LlmError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ImageBlock, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { ToolCallId } from '../compat.js'
 
@@ -21,7 +21,10 @@ export interface ResolvedImagePart {
 }
 
 /** Translator input block: a harness block, with images pre-resolved. */
-export type TranslatableBlock = Exclude<ContentBlock, ToolResultBlock> | ResolvedImagePart | ResolvedToolResultBlock
+export type TranslatableBlock =
+  | Exclude<ContentBlock, ImageBlock | ToolResultBlock>
+  | ResolvedImagePart
+  | ResolvedToolResultBlock
 
 /** Tool results may themselves carry attachment-backed images. */
 export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'> {
@@ -86,7 +89,7 @@ export function withToolResultImages(messages: readonly TranslatableMessage[]): 
     out.push(message)
     for (const block of message.content) {
       if (block.type !== 'tool-result') continue
-      const parts = block.content.filter((part): part is ResolvedImagePart => part.type === 'image' && 'dataBase64' in part)
+      const parts = block.content.filter((part): part is ResolvedImagePart => part.type === 'image')
       if (parts.length > 0) {
         images.push({ type: 'text', text: `Images from tool result ${String(block.toolCallId)}:` }, ...parts)
       }
@@ -109,7 +112,7 @@ export interface TranslatableMessage {
   source?: Message['source']
 }
 
-const hasImage = (block: TranslatableBlock): boolean => block.type === 'image'
+const hasImage = (block: ContentBlock | TranslatableBlock): boolean => block.type === 'image'
   || (block.type === 'tool-result' && block.content.some(hasImage))
 
 /**
@@ -118,7 +121,7 @@ const hasImage = (block: TranslatableBlock): boolean => block.type === 'image'
  * @param messages - conversation messages, resolved or not.
  * @returns true when at least one image block is present.
  */
-export function hasImages(messages: readonly TranslatableMessage[]): boolean {
+export function hasImages(messages: readonly { content: readonly (ContentBlock | TranslatableBlock)[] }[]): boolean {
   return messages.some(message => message.content.some(hasImage))
 }
 
@@ -137,7 +140,8 @@ export async function resolveImages(
   attachments: AttachmentStore | undefined,
   signal?: AbortSignal,
 ): Promise<readonly TranslatableMessage[]> {
-  if (!hasImages(messages)) return messages
+  // No image anywhere means no unresolved ImageBlock for the translators.
+  if (!hasImages(messages)) return messages as readonly TranslatableMessage[]
   if (attachments === undefined) {
     throw new LlmError(
       'dsh-plugin-subscriptions: the request carries an image but no attachments service is mounted; '

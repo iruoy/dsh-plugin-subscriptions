@@ -5,7 +5,7 @@
  * translators, so the translators see {@link ResolvedImagePart}s with inline
  * base64 data.
  */
-import type { ContentBlock, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm';
+import type { ContentBlock, ImageBlock, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm';
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
 /** An image block with its bytes resolved to inline base64 for the wire. */
 export interface ResolvedImagePart {
@@ -16,7 +16,7 @@ export interface ResolvedImagePart {
     dataBase64: string;
 }
 /** Translator input block: a harness block, with images pre-resolved. */
-export type TranslatableBlock = Exclude<ContentBlock, ToolResultBlock> | ResolvedImagePart | ResolvedToolResultBlock;
+export type TranslatableBlock = Exclude<ContentBlock, ImageBlock | ToolResultBlock> | ResolvedImagePart | ResolvedToolResultBlock;
 /** Tool results may themselves carry attachment-backed images. */
 export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'> {
     content: readonly TranslatableBlock[];
@@ -61,7 +61,9 @@ export interface TranslatableMessage {
  * @param messages - conversation messages, resolved or not.
  * @returns true when at least one image block is present.
  */
-export declare function hasImages(messages: readonly TranslatableMessage[]): boolean;
+export declare function hasImages(messages: readonly {
+    content: readonly (ContentBlock | TranslatableBlock)[];
+}[]): boolean;
 /**
  * Resolve every ImageBlock's attachment reference to inline base64 bytes.
  * Messages without images pass through unchanged. A request carrying an image

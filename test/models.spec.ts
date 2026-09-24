@@ -10,6 +10,7 @@ import assert from 'node:assert/strict'
 import './keep-alive.js'
 import { MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
+import type { TranslatableMessage } from '../src/translate/resolved.js'
 import { CodexAdapter, codexRequestBody, fetchCodexModels } from '../src/providers/codex.js'
 import { GrokAdapter } from '../src/providers/grok.js'
 import { ClaudeAdapter, claudeRequestBody, fetchClaudeModels } from '../src/providers/claude.js'
@@ -643,7 +644,7 @@ test('codexRequestBody bounds tool-call ids without losing their pairings', () =
 })
 
 /** One text-only message of any role, for request-body assembly. */
-function claudeMessage(id: string, role: Message['role'], text: string): Message {
+function claudeMessage(id: string, role: Message['role'], text: string): Message & TranslatableMessage {
   return {
     id: MessageId(id),
     role,
@@ -655,7 +656,7 @@ function claudeMessage(id: string, role: Message['role'], text: string): Message
 }
 
 test('claudeRequestBody ships the cache breakpoints and never exceeds four', () => {
-  const history: Message[] = [claudeMessage('s0', 'system', 'opening')]
+  const history: (Message & TranslatableMessage)[] = [claudeMessage('s0', 'system', 'opening')]
   for (let turn = 0; turn < 16; turn++) {
     history.push(claudeMessage(`u${turn}`, 'user', `q${turn}`))
     history.push(claudeMessage(`a${turn}`, 'assistant', `r${turn}`))
@@ -693,7 +694,7 @@ test('claudeRequestBody ships the cache breakpoints and never exceeds four', () 
 })
 
 test('claudeRequestBody omits tools, thinking and effort when the request carries none', () => {
-  const history: Message[] = [claudeMessage('u0', 'user', 'hi')]
+  const history: (Message & TranslatableMessage)[] = [claudeMessage('u0', 'user', 'hi')]
   const body = claudeRequestBody({ provider: 'claude', model: 'claude-opus-5', messages: history }, history, 32_000)
   assert.equal('tools' in body, false)
   assert.equal('thinking' in body, false)

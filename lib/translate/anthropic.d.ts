@@ -45,9 +45,8 @@ export interface AnthropicMessage {
  * messages before the conversation starts are handled by
  * {@link toAnthropicSystem} and skipped here, while a later one rides in
  * place as a user-role `<system-reminder>` block.
- * Reasoning blocks are not replayed (v1). Images must arrive pre-resolved
- * ({@link TranslatableMessage}); an unresolved ImageBlock is skipped because
- * its bytes are unreachable here.
+ * Reasoning blocks are not replayed (v1). Images arrive pre-resolved
+ * ({@link TranslatableMessage}).
  * @param messages - ordered conversation messages with resolved images.
  * @returns Anthropic messages in conversation order.
  */

@@ -242,6 +242,17 @@ test('first-class harness tool errors keep their error flag', () => {
   })
 })
 
+test('tool errors with JSON output keep their error flag', () => {
+  const messages: TranslatableMessage[] = [
+    message('assistant', [{ type: 'tool-call', id: ToolCallId('json-call'), name: 'bash', arguments: '{}' }]),
+    { role: 'tool', toolCallId: 'json-call', isError: true, content: [{ type: 'text', text: '{"error":"ENOENT"}' }] },
+  ]
+  const parts = toAntigravityRequest(options([]), messages, 'project-123').request.contents.flatMap(entry => entry.parts)
+  assert.deepEqual(parts[1].functionResponse, {
+    id: 'json-call', name: 'bash', response: { error: 'ENOENT', isError: true },
+  })
+})
+
 test('stream translator emits reasoning, text, tool call, usage, finish, and replay signature', () => {
   const translator = new AntigravityStreamTranslator()
   const chunks = translator.push({

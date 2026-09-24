@@ -69,14 +69,15 @@ export interface AntigravityRequest {
  */
 function toolResultValue(block: ResolvedToolResultBlock): Record<string, unknown> {
   const text = block.content.map(part => part.type === 'text' ? part.text : '').join('')
+  const error = block.isError === true ? { isError: true } : {}
   let parsed: unknown
   try {
     parsed = JSON.parse(text) as unknown
   } catch {
-    return { output: text, ...block.isError === true ? { isError: true } : {} }
+    return { output: text, ...error }
   }
-  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
-  return { output: parsed }
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return { ...parsed as Record<string, unknown>, ...error }
+  return { output: parsed, ...error }
 }
 
 /** Safely read per-block replay metadata emitted by this adapter. */

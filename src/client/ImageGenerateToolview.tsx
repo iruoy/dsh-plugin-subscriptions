@@ -20,7 +20,7 @@ import { IconSparkle16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageGallery } from './ImageGallery.js'
 import type { ImageAttachmentRef, ImageLoader, MessageImageLabels } from './ImageGallery.js'
 import { callSubscriptionsAuth } from './subscriptions-rpc.js'
-import { en } from './locales.js'
+import { fallbackTranslate } from './locales.js'
 import type { SubscriptionsKey } from './locales.js'
 
 /** Title prompt truncation budget (characters). */
@@ -75,21 +75,6 @@ export function createImageLoader(rpc: ConnectionHandle['rpc']): ImageLoader {
   return attachment =>
     callSubscriptionsAuth<ImageEndpointResult>(rpc, 'image', { ...attachment })
       .then(result => `data:${result.mediaType};base64,${result.dataBase64}`)
-}
-
-/**
- * English-dictionary fallback for a missing locale seat (standalone renders);
- * the framework always supplies the namespace-bound one.
- * @param key - dictionary key.
- * @param params - `{name}` template params.
- * @returns the template with params substituted.
- */
-function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknown>): string {
-  let text: string = en[key]
-  for (const [name, value] of Object.entries(params ?? {})) {
-    text = text.replaceAll(`{${name}}`, String(value))
-  }
-  return text
 }
 
 /** Extract the prompt from the call's raw args JSON; falls back to the first string value, then the raw line. */

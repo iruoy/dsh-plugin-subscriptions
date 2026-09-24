@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-import { en } from './locales.js'
+import { fallbackTranslate } from './locales.js'
 import { ProviderAccountManager } from './ProviderAccountManager.js'
 import type { SubscriptionsKey } from './locales.js'
 
@@ -147,21 +147,6 @@ function dropStale<T>(map: Record<string, T>, live: ReadonlySet<string>): Record
   const next = { ...map }
   for (const key of stale) delete next[key]
   return next
-}
-
-/**
- * English-dictionary fallback for a missing inject `t` (standalone renders);
- * the slot inject always supplies the locale-bound one.
- * @param key - dictionary key.
- * @param params - `{name}` template params.
- * @returns the template with params substituted.
- */
-function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknown>): string {
-  let text: string = en[key]
-  for (const [name, value] of Object.entries(params ?? {})) {
-    text = text.replaceAll(`{${name}}`, String(value))
-  }
-  return text
 }
 
 const styles: Record<string, CSSProperties> = {

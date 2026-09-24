@@ -291,3 +291,11 @@ export declare const zh: {
 };
 /** The Subscriptions namespace key union (en is the key-set source of truth). */
 export type SubscriptionsKey = keyof typeof en;
+/**
+ * English-dictionary fallback for a missing locale seat (standalone renders);
+ * the framework always supplies the namespace-bound one.
+ * @param key - dictionary key.
+ * @param params - `{name}` template params.
+ * @returns the template with params substituted.
+ */
+export declare function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknown>): string;

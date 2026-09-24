@@ -19,7 +19,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { IconSparkle16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { callSubscriptionsAuth } from './subscriptions-rpc.js'
-import { en } from './locales.js'
+import { fallbackTranslate } from './locales.js'
 import type { SubscriptionsKey } from './locales.js'
 
 /** Title prompt truncation budget (characters). */
@@ -63,18 +63,6 @@ export type VideoGenerateToolviewProps =
  */
 export function createVideoLoader(rpc: ConnectionHandle['rpc']): (name: string) => Promise<VideoBytes> {
   return name => callSubscriptionsAuth<VideoBytes>(rpc, 'video', { name })
-}
-
-/**
- * English-dictionary fallback for a missing locale seat (standalone renders);
- * the framework always supplies the namespace-bound one.
- */
-function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknown>): string {
-  let text: string = en[key]
-  for (const [name, value] of Object.entries(params ?? {})) {
-    text = text.replaceAll(`{${name}}`, String(value))
-  }
-  return text
 }
 
 /** Extract the prompt from the call's raw args JSON; falls back to the first string value, then the raw line. */

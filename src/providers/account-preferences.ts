@@ -1,7 +1,7 @@
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ProviderId } from '../auth/store.js'
-import type { ProviderSettingsStore, AccountPreferences } from '../provider-settings.js'
+import type { ProviderSettingsStore, ReadonlyAccountPreferences } from '../provider-settings.js'
 import type { AccountAwareAdapter } from './accounts.js'
 import { DISCOVERY_TIMEOUT_MS, withTimeout } from './common.js'
 import type { PoolAdapter } from './pool.js'
@@ -22,7 +22,7 @@ export function parseAccountModelId(id: string): { account: string; model: strin
     return { account, model }
   } catch { throw new LlmError('Invalid independent account model id', 'NO_ADAPTER') }
 }
-export function accountAllowsPool(preferences: AccountPreferences | undefined, model: string): boolean {
+export function accountAllowsPool(preferences: ReadonlyAccountPreferences | undefined, model: string): boolean {
   return preferences?.poolEnabled !== false && (preferences?.poolModels?.includes(model) ?? true)
 }
 interface Options {
@@ -36,9 +36,8 @@ interface Options {
 /** Keeps the registered route separate from raw adapters and pool member seams. */
 export class AccountPreferencesAdapter extends LlmAdapter {
   constructor(private readonly options: Options) { super() }
-  private preference(account: string): AccountPreferences | undefined {
-    const accounts = this.options.settings.get(this.options.provider).accounts
-    return accounts && Object.hasOwn(accounts, account) ? accounts[account] : undefined
+  private preference(account: string): ReadonlyAccountPreferences | undefined {
+    return this.options.settings.account(this.options.provider, account)
   }
   private async models(account: string): Promise<readonly LlmModelInfo[]> {
     return await withTimeout(signal => this.options.adapter.listOwnModels(this.options.provider, account, signal), DISCOVERY_TIMEOUT_MS) ?? []

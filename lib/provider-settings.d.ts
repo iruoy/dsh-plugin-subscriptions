@@ -16,6 +16,10 @@ export interface AccountPreferences {
     /** Absent allows every model; [] allows none. */
     poolModels?: string[];
 }
+/** Read-only view of {@link AccountPreferences}, as handed out uncloned. */
+export type ReadonlyAccountPreferences = Readonly<Omit<AccountPreferences, 'poolModels'>> & {
+    readonly poolModels?: readonly string[];
+};
 export interface ProviderPreferences {
     accounts?: Record<string, AccountPreferences>;
     /** Absent follows discovery; an explicit selection hides newly discovered models. */
@@ -31,6 +35,12 @@ export declare class ProviderSettingsStore {
     readonly path: string;
     constructor(path?: string);
     get(provider: ProviderId): ProviderPreferences;
+    /**
+     * One account's stored preferences without the defensive copy {@link get}
+     * makes: set() replaces the document rather than mutating it, so the
+     * returned object never changes under the caller. For hot-path policy reads.
+     */
+    account(provider: ProviderId, key: string): ReadonlyAccountPreferences | undefined;
     visible(provider: ProviderId, model: string): boolean;
     contextWindow(model: string): number | undefined;
     /** Creation-time policy survives restarts and never changes an existing session. */

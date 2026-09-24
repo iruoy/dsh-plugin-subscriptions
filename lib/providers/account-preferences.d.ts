@@ -1,7 +1,7 @@
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { ProviderId } from '../auth/store.js';
-import type { ProviderSettingsStore, AccountPreferences } from '../provider-settings.js';
+import type { ProviderSettingsStore, ReadonlyAccountPreferences } from '../provider-settings.js';
 import type { AccountAwareAdapter } from './accounts.js';
 import type { PoolAdapter } from './pool.js';
 /** Reserved namespace, recognized even when malformed or no longer enabled. */
@@ -11,7 +11,7 @@ export declare function parseAccountModelId(id: string): {
     account: string;
     model: string;
 } | undefined;
-export declare function accountAllowsPool(preferences: AccountPreferences | undefined, model: string): boolean;
+export declare function accountAllowsPool(preferences: ReadonlyAccountPreferences | undefined, model: string): boolean;
 interface Options {
     provider: ProviderId;
     adapter: AccountAwareAdapter;

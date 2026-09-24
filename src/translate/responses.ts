@@ -21,8 +21,8 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.js'
-import { withToolResultImages } from './resolved.js'
-import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
+import { toolResultText, withToolResultImages } from './resolved.js'
+import type { TranslatableMessage } from './resolved.js'
 
 /** Assembled `instructions` + `input` pair for one Responses request. */
 export interface ResponsesRequestInput {
@@ -52,11 +52,6 @@ export interface ReasoningReplayItem {
   status?: string
   /** Encrypted reasoning payload; the reason the item is worth replaying. */
   encrypted_content: string
-}
-
-/** Flatten a tool result's content to plain text for `function_call_output`. */
-function toolResultText(block: ResolvedToolResultBlock): string {
-  return block.content.map(part => (part.type === 'text' ? part.text : '')).join('')
 }
 
 /**

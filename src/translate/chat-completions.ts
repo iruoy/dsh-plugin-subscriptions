@@ -15,13 +15,8 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.js'
-import { withToolResultImages } from './resolved.js'
-import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
-
-/** Flatten a tool result's content to plain text for a `tool` message. */
-function toolResultText(block: ResolvedToolResultBlock): string {
-  return block.content.map(part => (part.type === 'text' ? part.text : '')).join('')
-}
+import { toolResultText, withToolResultImages } from './resolved.js'
+import type { TranslatableMessage } from './resolved.js'
 
 /**
  * Convert harness messages into chat completions `messages`. System-role

@@ -28,6 +28,11 @@ export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'
   content: readonly TranslatableBlock[]
 }
 
+/** Flatten a tool result's content to plain text for wires with text-only tool outputs. */
+export function toolResultText(block: ResolvedToolResultBlock): string {
+  return block.content.map(part => (part.type === 'text' ? part.text : '')).join('')
+}
+
 /**
  * Fold first-class `role: 'tool'` messages (DSH 0.1.7) into the user-role
  * `tool-result` block every translator already speaks, so each wire handles

@@ -18,7 +18,7 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.js'
-import { withToolResultBlocks } from './resolved.js'
+import { toolResultText, withToolResultBlocks } from './resolved.js'
 import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
 
 /**
@@ -59,7 +59,7 @@ export interface AnthropicMessage {
 /** Preserve native image blocks, retaining the existing text-only wire shape. */
 function toolResultContent(block: ResolvedToolResultBlock): string | Record<string, unknown>[] {
   if (!block.content.some(part => part.type === 'image' && 'dataBase64' in part)) {
-    return block.content.map(part => (part.type === 'text' ? part.text : '')).join('')
+    return toolResultText(block)
   }
   const content: Record<string, unknown>[] = []
   for (const part of block.content) {

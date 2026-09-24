@@ -21,6 +21,8 @@ export type TranslatableBlock = Exclude<ContentBlock, ToolResultBlock> | Resolve
 export interface ResolvedToolResultBlock extends Omit<ToolResultBlock, 'content'> {
     content: readonly TranslatableBlock[];
 }
+/** Flatten a tool result's content to plain text for wires with text-only tool outputs. */
+export declare function toolResultText(block: ResolvedToolResultBlock): string;
 /**
  * Fold first-class `role: 'tool'` messages (DSH 0.1.7) into the user-role
  * `tool-result` block every translator already speaks, so each wire handles

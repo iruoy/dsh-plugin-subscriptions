@@ -15,7 +15,7 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import type { ResolvedToolResultBlock, TranslatableMessage } from './resolved.js'
-import { withToolResultImages } from './resolved.js'
+import { toolResultText, withToolResultImages } from './resolved.js'
 import { parseSse } from './sse.js'
 import { antigravityThinking } from './antigravity-thinking.js'
 import { antigravityToolParameters } from './antigravity-schema.js'
@@ -68,7 +68,7 @@ export interface AntigravityRequest {
  * the shape other Cloud Code Assist clients send for every tool result.
  */
 function toolResultValue(block: ResolvedToolResultBlock): Record<string, unknown> {
-  const text = block.content.map(part => part.type === 'text' ? part.text : '').join('')
+  const text = toolResultText(block)
   const error = block.isError === true ? { isError: true } : {}
   let parsed: unknown
   try {

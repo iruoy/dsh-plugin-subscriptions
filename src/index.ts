@@ -449,9 +449,19 @@ export class SubscriptionsAuthController implements AuthController {
         // Keychain imports are bound: only they sync refreshes back to
         // Claude Code's credential store.
         const session: ClaudeSession = { ...imported, keychainBound: true }
+        const key = accountKeyOf('claude', session)
+        // Imports stored before the email was read sit under a token-hash
+        // key. Every keychain-bound session syncs to the same Claude Code
+        // credential, so replace them rather than duplicate the login.
+        const legacy = (await listAccounts('claude')).flatMap((entry, index) =>
+          entry.key !== key && entry.session.keychainBound === true && entry.session.emailAddress === undefined
+            ? [{ key: entry.key, isDefault: index === 0 }]
+            : [])
+        for (const entry of legacy) await deleteAccountSession('claude', entry.key)
         await this.persist('claude', session)
+        if (legacy.some(entry => entry.isDefault)) await setDefaultAccount('claude', key)
         this.lastError.delete('claude')
-        this.onAuthChanged('claude', accountKeyOf('claude', session))
+        this.onAuthChanged('claude', key)
         return { authorizeUrl: '' }
       }
       if (method === 'keychain') {

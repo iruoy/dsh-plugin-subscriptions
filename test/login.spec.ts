@@ -26,11 +26,11 @@ import * as plugin from '../src/index.js'
 import { SubscriptionsAuthController } from '../src/index.js'
 import { OAuthFlowManager } from '../src/auth/oauth-flow.js'
 import { DeviceFlowManager } from '../src/auth/device-flow.js'
-import { readClaudeCodeCredentials } from '../src/auth/claude-code-creds.js'
+import { readClaudeCodeCredentials, refreshClaudeSynced } from '../src/auth/claude-code-creds.js'
 import {
   CLAUDE_AUTHORIZE_URL, CLAUDE_CALLBACK_PATH, CLAUDE_CLIENT_ID, CLAUDE_SCOPE, CLAUDE_TOKEN_URL,
 } from '../src/providers/claude.js'
-import { accountKeyOf, authFilePath, listAccounts } from '../src/auth/store.js'
+import { accountKeyOf, authFilePath, listAccounts, saveAccountSession } from '../src/auth/store.js'
 import type { ClaudeSession } from '../src/auth/store.js'
 
 const TEMP_DIRS: string[] = []
@@ -209,6 +209,56 @@ test('readClaudeCodeCredentials reads bare fields (no claudeAiOauth wrapper)', n
   })
 })
 
+test('readClaudeCodeCredentials takes the email from Claude Code\'s global config', needsFileStore, async () => {
+  // The credential blob carries no email; Claude Code keeps it under
+  // `oauthAccount` in `.claude.json`, which is what the Settings page shows.
+  const dir = credentialsDir('claude-email-', VALID_BLOB)
+  writeFileSync(join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'me@example.com' } }))
+  await withEnv('CLAUDE_CONFIG_DIR', dir, async () => {
+    assert.equal((await readClaudeCodeCredentials())?.emailAddress, 'me@example.com')
+  })
+})
+
+test('readClaudeCodeCredentials leaves the email unset without a readable global config', needsFileStore, async () => {
+  const dir = credentialsDir('claude-no-email-', VALID_BLOB)
+  writeFileSync(join(dir, '.claude.json'), '{not json')
+  await withEnv('CLAUDE_CONFIG_DIR', dir, async () => {
+    const session = await readClaudeCodeCredentials()
+    assert.ok(session !== undefined, 'a bad global config does not block the import')
+    assert.equal(session.emailAddress, undefined)
+  })
+})
+
+test('refreshClaudeSynced backfills the email of an unchanged keychain-bound session', needsFileStore, async () => {
+  const dir = credentialsDir('claude-sync-email-', VALID_BLOB)
+  writeFileSync(join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'me@example.com' } }))
+  await withEnv('CLAUDE_CONFIG_DIR', dir, async () => {
+    const stored = await readClaudeCodeCredentials()
+    assert.ok(stored !== undefined)
+    const { emailAddress: _, ...legacy } = stored
+    const synced = await refreshClaudeSynced(legacy, () => assert.fail('an unexpired token is not refreshed'))
+    assert.equal(synced.emailAddress, 'me@example.com')
+    assert.equal(synced.accessToken, legacy.accessToken)
+  })
+})
+
+test('refreshClaudeSynced keeps the keychain binding across a refresh', needsFileStore, async () => {
+  // Losing it would demote the account to a standalone refresher that spends
+  // Claude Code's rotating refresh token behind its back.
+  await withEnv('CLAUDE_CONFIG_DIR', credentialsDir('claude-sync-bound-', VALID_BLOB), async () => {
+    const stored = await readClaudeCodeCredentials()
+    assert.ok(stored !== undefined)
+    const expired: ClaudeSession = { ...stored, expiresAt: 0, keychainBound: true }
+    const adopted = await refreshClaudeSynced({ ...expired, accessToken: 'older' }, () => assert.fail('the source is fresh'))
+    assert.equal(adopted.keychainBound, true, 'adopting the source\'s rotation keeps it')
+    const refreshed = await refreshClaudeSynced(
+      { ...stored, expiresAt: 0, keychainBound: true },
+      async ({ keychainBound: _, ...session }) => ({ ...session, accessToken: 'new', expiresAt: Date.now() + 3600_000 }),
+    )
+    assert.equal(refreshed.keychainBound, true, 'a refresh grant keeps it')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // login('claude'): the two paths
 // ---------------------------------------------------------------------------
@@ -221,6 +271,32 @@ test('login(claude): credentials found → instant import, session persisted', a
 
     assert.equal((await listAccounts('claude'))[0]?.session.accessToken, FAKE_SESSION.accessToken)
     assert.equal((await controller.status('claude')).accounts.length, 1)
+  })
+})
+
+test('login(claude): the import is keyed and displayed by the account email', async () => {
+  await inIsolatedHome(async () => {
+    const controller = makeController(() => ({ ...FAKE_SESSION, emailAddress: 'me@example.com' }))
+    await controller.login('claude')
+    const [account] = (await controller.status('claude')).accounts
+    assert.equal(account?.key, 'me@example.com')
+    assert.equal(account?.account, 'me@example.com')
+  })
+})
+
+test('login(claude): a re-import replaces the email-less import it supersedes', async () => {
+  await inIsolatedHome(async () => {
+    const legacy: ClaudeSession = { ...FAKE_SESSION, keychainBound: true }
+    const legacyKey = accountKeyOf('claude', legacy)
+    await saveAccountSession('claude', legacyKey, legacy)
+    // An OAuth account without an email is someone else's login: keep it.
+    const oauth: ClaudeSession = { ...FAKE_SESSION, refreshToken: 'oauth-rt' }
+    await saveAccountSession('claude', accountKeyOf('claude', oauth), oauth)
+
+    const controller = makeController(() => ({ ...FAKE_SESSION, refreshToken: 'rotated-rt', emailAddress: 'me@example.com' }))
+    await controller.login('claude')
+    const keys = (await listAccounts('claude')).map(entry => entry.key)
+    assert.deepEqual(keys, ['me@example.com', accountKeyOf('claude', oauth)], 'the new key inherits the default')
   })
 })
 

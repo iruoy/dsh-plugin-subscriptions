@@ -64,6 +64,34 @@ function credentialsFilePath(): string {
   return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), '.credentials.json')
 }
 
+/** Claude Code's global config, which holds the login's `oauthAccount` profile. */
+function globalConfigPath(): string {
+  return join(process.env.CLAUDE_CONFIG_DIR ?? homedir(), '.claude.json')
+}
+
+/**
+ * The logged-in account's email, which Claude Code keeps in its global config
+ * rather than the credential blob. Best-effort: a missing or unreadable config
+ * leaves the session unidentified, as before.
+ */
+async function readAccountEmail(): Promise<string | undefined> {
+  const raw = await readFile(globalConfigPath(), 'utf8').catch(() => undefined)
+  if (raw === undefined) return undefined
+  try {
+    const email = (JSON.parse(raw) as { oauthAccount?: { emailAddress?: unknown } }).oauthAccount?.emailAddress
+    return typeof email === 'string' && email.length > 0 ? email : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Fill the email from Claude Code's global config when the blob lacks one. */
+async function withAccountEmail(session: ClaudeSession | undefined): Promise<ClaudeSession | undefined> {
+  if (session === undefined || session.emailAddress !== undefined) return session
+  const emailAddress = await readAccountEmail()
+  return emailAddress === undefined ? session : { ...session, emailAddress }
+}
+
 async function readKeychainRaw(): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync('/usr/bin/security', ['find-generic-password', '-s', PRIMARY_SERVICE, '-w'], {
@@ -81,10 +109,10 @@ export async function readClaudeCodeCredentials(): Promise<ClaudeSession | undef
   if (process.platform === 'darwin') {
     const raw = await readKeychainRaw()
     const session = raw !== undefined ? parseBlob(raw) : undefined
-    if (session) return session
+    if (session) return withAccountEmail(session)
   }
   const raw = await readFile(credentialsFilePath(), 'utf8').catch(() => undefined)
-  return raw !== undefined ? parseBlob(raw) : undefined
+  return withAccountEmail(raw !== undefined ? parseBlob(raw) : undefined)
 }
 
 function blobMatches(raw: string, expectedAccessToken: string): boolean {
@@ -178,9 +206,18 @@ export async function refreshClaudeSynced(
   doRefresh: (session: ClaudeSession) => Promise<ClaudeSession>,
 ): Promise<ClaudeSession> {
   const fromSource = await readClaudeCodeCredentials()
-  const base = fromSource !== undefined && fromSource.accessToken !== session.accessToken ? fromSource : session
+  // The binding lives on the stored session only: both the source's blob and
+  // a refresh grant's response come back without it, and the caller saves
+  // whatever this returns.
+  const bound = session.keychainBound === undefined ? {} : { keychainBound: session.keychainBound }
+  const base = fromSource !== undefined && fromSource.accessToken !== session.accessToken
+    ? { ...fromSource, ...bound }
+    // Same login: backfill the email a session imported before it was read.
+    : session.emailAddress === undefined && fromSource?.emailAddress !== undefined
+      ? { ...session, emailAddress: fromSource.emailAddress }
+      : session
   if (base.expiresAt > Date.now() + 60_000) return base
   const next = await doRefresh(base)
   await writeBackClaudeCodeCredentials(next, base.accessToken)
-  return next
+  return { ...next, ...bound }
 }

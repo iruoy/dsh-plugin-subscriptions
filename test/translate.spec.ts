@@ -157,6 +157,14 @@ test('tool-role messages correlate through tool_call_id or a tool source', () =>
   assert.equal(((input[4].content as Record<string, unknown>[])[0]).text, 'Images from tool result imported:')
 })
 
+test('an empty toolCallId falls back to the other correlation ids', () => {
+  const messages: TranslatableMessage[] = [
+    message('assistant', [toolCall('fallback', 'bash', '{}')]),
+    { role: 'tool', toolCallId: '', tool_call_id: 'fallback', content: [{ type: 'text', text: 'ok' }] },
+  ]
+  assert.deepEqual(toResponsesInput(messages).input[1], { type: 'function_call_output', call_id: 'fallback', output: 'ok' })
+})
+
 test('resolveImages preserves first-class tool call ids', async () => {
   const ref = { attachmentId: 'image-1', mediaType: 'image/png', bytes: 2, width: 1, height: 1 }
   const result = {

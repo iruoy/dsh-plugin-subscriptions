@@ -39,8 +39,11 @@ export function withToolResultBlocks(messages: readonly TranslatableMessage[]): 
   if (!messages.some(message => message.role === 'tool')) return messages
   return messages.map((message): TranslatableMessage => {
     if (message.role !== 'tool') return message
-    const callId = message.toolCallId ?? message.tool_call_id
-      ?? (message.source?.kind === 'tool' ? String(message.source.callId) : undefined)
+    const callId = [
+      message.toolCallId,
+      message.tool_call_id,
+      message.source?.kind === 'tool' ? String(message.source.callId) : undefined,
+    ].find(id => id !== undefined && id.length > 0)
     if (callId === undefined) throw new LlmError('tool result has no call id', 'INVALID_REQUEST')
     return {
       role: 'user',

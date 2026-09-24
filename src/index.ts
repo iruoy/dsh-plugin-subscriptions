@@ -1,3 +1,4 @@
+import { registerUsageService } from './usage-service.js'
 /**
  * dsh-plugin-subscriptions: register OAuth-subscription LLM providers
  * (ChatGPT/Codex, Claude, Grok, GitHub Copilot, Google Antigravity) on `ctx.llm`, and expose the `/subscriptions-auth`
@@ -1110,9 +1111,11 @@ export function apply(ctx: Context, config: Config): void {
       handles.get(provider)?.replace([provider])
     },
   }
-  registerAuthRpc(ctx, new SubscriptionsAuthController(
+  const authController = new SubscriptionsAuthController(
     flows, deviceFlows, authChanged, resolveAttachments, usageFetchers, undefined, poolUsage, config.antigravity,
-  ), speed, {
+  )
+  registerUsageService(ctx, authController)
+  registerAuthRpc(ctx, authController, speed, {
     get: () => proxyGetConfig(),
     set: input => proxySetConfig(input),
     test: payload => proxyTestConnection(payload.url, payload.proxy),

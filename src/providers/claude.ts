@@ -444,19 +444,18 @@ function claudeThinkingType(capabilities: ClaudeModelCapabilities | undefined): 
 /** Effort levels in display order; a model exposes only the ones it advertises as supported. */
 const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
-/** The effort the Messages API applies when a request names none. */
-const CLAUDE_DEFAULT_EFFORT = 'high'
-
+/**
+ * The advertised effort levels, without a default: the models API does not say
+ * which level a request without an effort runs at (it differs per model), and
+ * DSH sends a reported default explicitly on every call that names no effort.
+ */
 function claudeReasoning(capabilities: ClaudeModelCapabilities | undefined): DiscoveredModel['reasoning'] {
   const effort = capabilities?.effort
   if (effort?.supported !== true) return undefined
   const efforts = CLAUDE_EFFORT_LEVELS
     .filter(level => effort[level]?.supported === true)
     .map(level => ({ id: ReasoningEffortId(level), name: level[0].toUpperCase() + level.slice(1) }))
-  if (efforts.length === 0) return undefined
-  return efforts.some(entry => entry.id === CLAUDE_DEFAULT_EFFORT)
-    ? { efforts, defaultEffort: ReasoningEffortId(CLAUDE_DEFAULT_EFFORT) }
-    : { efforts }
+  return efforts.length > 0 ? { efforts } : undefined
 }
 
 /** One entry of the `/v1/models` response; only the fields the plugin reads. */

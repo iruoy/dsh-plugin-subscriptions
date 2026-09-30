@@ -457,23 +457,20 @@ test('fetchClaudeModels carries the advertised context window and output cap', a
   ])
 })
 
-test('fetchClaudeModels reports high as the default of a model that advertises it', async () => {
-  const effort = (levels: string[]) => ({
-    effort: { supported: true, ...Object.fromEntries(levels.map(level => [level, { supported: true }])) },
-  })
+test('fetchClaudeModels reports the advertised efforts without inventing a default', async () => {
   const models = await fetchClaudeModels(claudeSession, fakeFetch({
-    data: [
-      { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', capabilities: effort(['low', 'medium', 'high', 'max']) },
-      { type: 'model', id: 'claude-lite', display_name: 'Lite', capabilities: effort(['low', 'medium']) },
-    ],
+    data: [{
+      type: 'model',
+      id: 'claude-opus-5-5',
+      display_name: 'Claude Opus 5.5',
+      capabilities: { effort: { supported: true, low: { supported: true }, medium: { supported: true }, high: { supported: true } } },
+    }],
   }).fetchFn)
-  assert.deepEqual(models.map(model => model.reasoning), [
-    {
-      efforts: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }],
-      defaultEffort: 'high',
-    },
-    { efforts: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }] },
-  ])
+  // DSH sends a reported default on every call without an effort; the API's own
+  // default differs per model (medium on Opus 5.5), so none may be reported.
+  assert.deepEqual(models[0]?.reasoning, {
+    efforts: [{ id: 'low', name: 'Low' }, { id: 'medium', name: 'Medium' }, { id: 'high', name: 'High' }],
+  })
 })
 
 test('claude resolveModel serves discovered limits for models newer than the bundled catalog', async () => {

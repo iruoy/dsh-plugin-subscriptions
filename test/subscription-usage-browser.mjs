@@ -12,7 +12,7 @@ const result = await build({
   input: 'test/subscription-usage-browser.fixture.tsx',
   resolve: { alias: { 'react-dom/client': `${packagePath('react-dom')}/client.js` } },
   transform: { define: { 'process.env.NODE_ENV': '"production"' } },
-  plugins: [{ name: 'test-css', load(id) { return id.endsWith('.css') ? 'export default {}' : null } }],
+  plugins: [{ name: 'test-css', load(id) { return id.endsWith('.css') ? { code: 'export default {}', moduleType: 'js' } : null } }],
   output: { format: 'iife' }, write: false,
 })
 const code = result.output.find(file => file.type === 'chunk').code

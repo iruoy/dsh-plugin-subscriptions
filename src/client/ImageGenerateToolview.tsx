@@ -16,13 +16,17 @@
 import type { CSSProperties } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { IconSparkleRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageGallery } from './ImageGallery.js'
 import type { ImageAttachmentRef, ImageLoader, MessageImageLabels } from './ImageGallery.js'
+import { hostIcon } from './host-icons.js'
 import { callSubscriptionsAuth } from './subscriptions-rpc.js'
 import { fallbackTranslate } from './locales.js'
 import { derivePrompt, resultText } from './toolview-shared.js'
 import type { SubscriptionsKey } from './locales.js'
+
+/** DSH 0.1.7 renamed IconSparkle16; resolving it by name keeps older hosts working too. */
+const SparkleIcon = hostIcon(primitives, 'Sparkle')
 
 /** Mirror of ui-tool's ToolCallOwnerProps (see the module header). */
 interface ToolCallOwnerProps {
@@ -131,7 +135,7 @@ export function ImageGenerateToolview(props: ImageGenerateToolviewProps) {
   return (
     <div style={styles.container}>
       <div style={styles.row}>
-        <span style={styles.icon}><IconSparkleRegular size={14} /></span>
+        <span style={styles.icon}><SparkleIcon size={14} /></span>
         <span style={styles.title}>{title}</span>
       </div>
       {!settled && <p style={styles.subtle}>{t('generating')}</p>}

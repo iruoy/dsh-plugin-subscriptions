@@ -68,7 +68,9 @@ import { AccountTokenManager } from './providers/accounts.js'
 import type { AccountAwareAdapter } from './providers/accounts.js'
 import { DEFAULT_RATE_LIMIT_MAX_WAIT_MS, resolveRateLimitWait } from './providers/rate-limit.js'
 import type { RateLimitConfig } from './providers/rate-limit.js'
-import { catalogStore } from './providers/catalog-store.js'
+import { accountCatalogStore, catalogStore } from './providers/catalog-store.js'
+import { ClaudeCliVersionCache } from './providers/claude-cli-version.js'
+import type { CliVersion, NpmCliVersionCache } from './providers/npm-cli-version.js'
 import { CodexClientVersionCache } from './providers/codex-client-version.js'
 import { CodexWebSearchProvider } from './providers/codex-search.js'
 import { PoolAdapter } from './providers/pool.js'
@@ -335,13 +337,26 @@ export class SubscriptionsAuthController implements AuthController {
   /** Last login failure per provider, surfaced as `detail` until the next success. */
   private lastError = new Map<ProviderId, string>()
   /**
-   * Device-flow logins whose poll already settled but whose token exchange +
-   * persist is still running. Between those two moments the attempt is gone
-   * from the flow manager (busy=false) while no session exists yet
-   * (loggedIn=false) — counting this window as busy keeps the Settings page
-   * polling until the card can show the real outcome.
+   * Logins per provider whose attempt has left its flow manager (the code
+   * arrived, or the device poll settled) but whose token exchange + persist
+   * is still running. In that window the flow manager says busy=false while
+   * no session exists yet (loggedIn=false); the Settings page polls only
+   * while busy, so without counting it the card would stop at "not logged
+   * in" one tick before the session lands and never refresh on its own. A
+   * count rather than a set: a superseded attempt finishing late must not
+   * clear the window of the attempt that replaced it.
    */
-  private finalizing = new Set<ProviderId>()
+  private finalizing = new Map<ProviderId, number>()
+
+  private beginFinalizing(provider: ProviderId): void {
+    this.finalizing.set(provider, (this.finalizing.get(provider) ?? 0) + 1)
+  }
+
+  private endFinalizing(provider: ProviderId): void {
+    const left = (this.finalizing.get(provider) ?? 1) - 1
+    if (left <= 0) this.finalizing.delete(provider)
+    else this.finalizing.set(provider, left)
+  }
 
   /** In-flight OAuth completions, one per provider at most. */
   private completions = new Map<ProviderId, Promise<void>>()
@@ -386,6 +401,8 @@ export class SubscriptionsAuthController implements AuthController {
     private readonly poolUsage: PoolUsageTracker | undefined = undefined,
     /** Antigravity OAuth/runtime configuration. */
     private readonly antigravityConfig: Config['antigravity'] = {},
+    /** The CLI version each route presents, shown beside the provider in Settings. */
+    private readonly clientVersions: Partial<Record<ProviderId, () => Promise<CliVersion | undefined>>> = {},
   ) {}
 
   usage(provider: ProviderId, account: string, signal: AbortSignal, force = false): Promise<ProviderUsage> {
@@ -415,6 +432,7 @@ export class SubscriptionsAuthController implements AuthController {
     const entries = await listAccounts(provider)
     // The plan name is shown by the usage section, so `detail` only carries errors.
     const detail = this.lastError.get(provider)
+    const clientVersion = await this.clientVersions[provider]?.()
     return {
       busy: this.flows.isBusy(provider) || this.deviceFlows.isBusy(provider) || this.finalizing.has(provider),
       accounts: entries.map(({ key, session }, index) => {
@@ -429,6 +447,7 @@ export class SubscriptionsAuthController implements AuthController {
         }
       }),
       ...detail === undefined ? {} : { detail },
+      ...clientVersion === undefined ? {} : { clientVersion },
     }
   }
 
@@ -483,7 +502,7 @@ export class SubscriptionsAuthController implements AuthController {
       // Device flow: no redirect URI — the UI shows the user code while the
       // background task polls GitHub for the token.
       const attempt = await this.deviceFlows.start(provider, copilotDeviceFlow())
-      this.finalizing.add(provider)
+      this.beginFinalizing(provider)
       void this.completeDevice(provider, attempt)
       return { authorizeUrl: attempt.verificationUrl, userCode: attempt.userCode }
     }
@@ -495,6 +514,7 @@ export class SubscriptionsAuthController implements AuthController {
     const attempt = await this.flows.start(provider, spec)
     // Claimed only once the attempt exists: a rejected `start()` (one attempt
     // per provider) must not supersede the attempt already running.
+    this.beginFinalizing(provider)
     this.completions.set(provider, this.complete(provider, attempt, this.claim(provider)))
     return { authorizeUrl: attempt.authorizeUrl }
   }
@@ -542,6 +562,8 @@ export class SubscriptionsAuthController implements AuthController {
       if (!(error instanceof Error && error.message === 'login cancelled')) {
         this.lastError.set(provider, errorChain(error))
       }
+    } finally {
+      this.endFinalizing(provider)
     }
   }
 
@@ -559,11 +581,12 @@ export class SubscriptionsAuthController implements AuthController {
         this.lastError.set(provider, errorChain(error))
       }
     } finally {
-      this.finalizing.delete(provider)
+      this.endFinalizing(provider)
     }
   }
 
-  private exchange(provider: ProviderId, code: string, attempt: OAuthAttempt): Promise<StoredSession> {
+  /** Token exchange for one OAuth code; `protected` so tests can stand in for the provider endpoint. */
+  protected exchange(provider: ProviderId, code: string, attempt: OAuthAttempt): Promise<StoredSession> {
     switch (provider) {
       case 'codex':
         return exchangeCodexCode(code, attempt.pkce.verifier, attempt.redirectUri)
@@ -635,6 +658,33 @@ export class SubscriptionsAuthController implements AuthController {
   }
 }
 
+/** How long the Settings status waits on a CLI version refresh before showing the last one. */
+const STATUS_VERSION_WAIT_MS = 1000
+
+/**
+ * Read the CLI version a route presents for the Settings page. The first
+ * lookup is awaited (bounded by its own 5s deadline) so a slow registry is
+ * not misreported as a fallback; a later refresh is waited on only briefly,
+ * because the whole page waits on `status`, and the last result shows.
+ */
+export function presentedVersion(
+  cache: Pick<NpmCliVersionCache, 'resolve' | 'current'>,
+  waitMs = STATUS_VERSION_WAIT_MS,
+): () => Promise<CliVersion | undefined> {
+  return async () => {
+    if (cache.current() === undefined) {
+      await cache.resolve()
+      return cache.current()
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      cache.resolve(),
+      new Promise<void>(resolve => { timer = setTimeout(resolve, waitMs) }),
+    ]).finally(() => { clearTimeout(timer) })
+    return cache.current()
+  }
+}
+
 export function apply(ctx: Context, config: Config): void {
   // Outbound requests (catalog discovery, the npm version lookup, token
   // refresh) must survive links where one TCP handshake exceeds Node's 250ms
@@ -643,6 +693,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => () => { restoreConnectAttemptTimeout(previousAttemptTimeout) }, 'dsh-plugin-subscriptions: connect attempt timeout')
   const preferences = new ProviderSettingsStore()
   const codexVersion = new CodexClientVersionCache()
+  const claudeVersion = new ClaudeCliVersionCache()
   const providers = [...new Set(config.providers ?? [...PROVIDER_IDS])]
   const streamIdleTimeoutMs = config.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
   if (!Number.isFinite(streamIdleTimeoutMs) || streamIdleTimeoutMs <= 0) {
@@ -755,6 +806,7 @@ export function apply(ctx: Context, config: Config): void {
           // Durable catalog: capability metadata (reasoning efforts) survives
           // restarts, so a resumed session's selected effort keeps resolving.
           catalogStore: catalogStore('codex'),
+          accountCatalogStore: account => accountCatalogStore('codex', account),
           defaultEffortOf: (model: string) => defaultEffortOf('codex', model),
           contextWindowOf: model => preferences.contextWindow(model),
           pool: () => poolAdapter,
@@ -786,7 +838,7 @@ export function apply(ctx: Context, config: Config): void {
         claudeTokens = tokens
         accountTokens.set('claude', tokens as AccountTokenManager<StoredSession>)
         usageFetchers.claude = async (account, signal) =>
-          fetchClaudeUsage(await tokens.session(account), proxiedFetch, signal)
+          fetchClaudeUsage(await tokens.session(account), proxiedFetch, signal, () => claudeVersion.resolve())
         const adapter = new ClaudeAdapter({
           models: catalog.claude,
           streamIdleTimeoutMs,
@@ -797,6 +849,7 @@ export function apply(ctx: Context, config: Config): void {
           resolveAttachments,
           catalogStore: catalogStore('claude'),
           defaultEffortOf: (model: string) => defaultEffortOf('claude', model),
+          resolveCliVersion: () => claudeVersion.resolve(),
           pool: () => poolAdapter,
         })
         adapters.set('claude', adapter)
@@ -923,7 +976,12 @@ export function apply(ctx: Context, config: Config): void {
         case 'claude': {
           const tokens = claudeTokens
           return tokens === undefined ? undefined : async () =>
-            fetchClaudeUsage(await tokens.session(account), proxiedFetch, AbortSignal.timeout(POOL_USAGE_TIMEOUT_MS))
+            fetchClaudeUsage(
+              await tokens.session(account),
+              proxiedFetch,
+              AbortSignal.timeout(POOL_USAGE_TIMEOUT_MS),
+              () => claudeVersion.resolve(),
+            )
         }
         case 'grok': {
           const tokens = grokTokens
@@ -1034,6 +1092,7 @@ export function apply(ctx: Context, config: Config): void {
     async catalog(force = false): Promise<ModelDefaultsCatalog[]> {
       if (force) {
         codexVersion.invalidate()
+        claudeVersion.invalidate()
         // This is not an auth transition: retain health, usage and Copilot
         // reasoning replay, but bypass every account's discovery cache.
         for (const adapter of adapters.values()) adapter.clearAccountCatalog()
@@ -1113,6 +1172,14 @@ export function apply(ctx: Context, config: Config): void {
   }
   const authController = new SubscriptionsAuthController(
     flows, deviceFlows, authChanged, resolveAttachments, usageFetchers, undefined, poolUsage, config.antigravity,
+    {
+      ...providers.includes('codex') ? {
+        codex: config.codexClientVersion === undefined
+          ? presentedVersion(codexVersion)
+          : async () => ({ version: config.codexClientVersion!, source: 'config' as const }),
+      } : {},
+      ...providers.includes('claude') ? { claude: presentedVersion(claudeVersion) } : {},
+    },
   )
   registerUsageService(ctx, authController)
   registerAuthRpc(ctx, authController, speed, {
@@ -1126,6 +1193,7 @@ export function apply(ctx: Context, config: Config): void {
       if (!adapter) throw new BadRequest(`provider ${provider} is not configured`)
       if (force) {
         if (provider === 'codex') codexVersion.invalidate()
+        if (provider === 'claude') claudeVersion.invalidate()
         adapter.clearAccountCatalog()
         poolAdapter?.invalidate()
         handles.get(provider)?.replace([provider])

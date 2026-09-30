@@ -16,7 +16,7 @@ import {
   QUOTA_EXCEEDED_CODE,
   ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
-import { rateLimitDiagnostics, retryAfterInstant, waitFromReset } from './rate-limit.js'
+import { durationMs, rateLimitDiagnostics, retryAfterInstant, waitFromReset } from './rate-limit.js'
 import type { RateLimitResetReader } from './rate-limit.js'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 
@@ -148,7 +148,7 @@ export async function httpLlmError(
   // re-hitting the same closed window.
   const rateLimited = response.status === 429
   const reset = rateLimited
-    ? options.rateLimitReset?.(response, body, now) ?? retryAfterInstant(response, now)
+    ? options.rateLimitReset?.(response, body, now) ?? googleQuotaReset(body, now) ?? retryAfterInstant(response, now)
     : retryAfterInstant(response, now)
   if (reset === undefined && rateLimited) {
     options.onWarn?.(`${label}: ${rateLimitDiagnostics(response, body)}`)
@@ -157,6 +157,31 @@ export async function httpLlmError(
     status: response.status,
     ...reset === undefined ? {} : { providerRetryAfterMs: waitFromReset(reset, now) },
   })
+}
+
+/**
+ * Read a Google RPC quota reset from a 429 body.
+ *
+ * Antigravity discloses the window in `quotaResetDelay` and
+ * `quotaResetTimeStamp` and supplies no rate-limit reader. A wait beyond the
+ * route's delay ceiling makes the retry plugin fail the turn immediately
+ * rather than spending its local retry budget on a closed window. The
+ * relative delay wins: it is measured from this response, so a skewed local
+ * clock cannot stretch or erase it the way it would an absolute timestamp.
+ * @param body - the complete response body.
+ * @param now - the current epoch milliseconds.
+ * @returns the reset instant, or undefined when the body does not name one.
+ */
+function googleQuotaReset(body: string, now: number): number | undefined {
+  const delay = /"quotaResetDelay"\s*:\s*"([^"]+)"/.exec(body)
+  if (delay !== null) {
+    const ms = durationMs(delay[1])
+    if (ms !== undefined && ms > 0) return now + ms
+  }
+  const stamp = /"quotaResetTimeStamp"\s*:\s*"([^"]+)"/.exec(body)
+  if (stamp === null) return undefined
+  const instant = Date.parse(stamp[1])
+  return Number.isFinite(instant) && instant > now ? instant : undefined
 }
 
 /**
@@ -314,7 +339,12 @@ export class OAuthEndpointError extends Error {
 }
 
 /**
- * Read an OAuth JSON error body into an {@link OAuthEndpointError}.
+ * Read an OAuth JSON error body into an {@link OAuthEndpointError}. Two body
+ * shapes are understood: RFC 6749 (`{ error: "invalid_grant", error_description }`)
+ * and the OpenAI API envelope the auth.openai.com token endpoint now answers
+ * with (`{ error: { code: "refresh_token_reused", message } }`). The code
+ * must land in `oauthCode` either way — the permanent-failure classifiers
+ * key on it, and an unrecognized shape would keep a dead login forever.
  * @param response - the failed token-endpoint response.
  * @param label - diagnostic prefix naming the provider.
  * @returns the error to throw.
@@ -323,9 +353,16 @@ export async function oauthEndpointError(response: Response, label: string): Pro
   let oauthCode: string | undefined
   let detail = ''
   try {
-    const parsed = await response.json() as { error?: string; error_description?: string }
-    oauthCode = typeof parsed.error === 'string' ? parsed.error : undefined
-    detail = typeof parsed.error_description === 'string' ? parsed.error_description : (oauthCode ?? '')
+    const parsed = await response.json() as { error?: unknown; error_description?: unknown }
+    if (typeof parsed.error === 'string') {
+      oauthCode = parsed.error
+    } else if (typeof parsed.error === 'object' && parsed.error !== null) {
+      const nested = parsed.error as { code?: unknown; message?: unknown }
+      if (typeof nested.code === 'string' && nested.code.length > 0) oauthCode = nested.code
+      if (typeof nested.message === 'string') detail = nested.message
+    }
+    if (typeof parsed.error_description === 'string') detail = parsed.error_description
+    if (detail.length === 0) detail = oauthCode ?? ''
   } catch {
     // Only swallow error-body parsing: the HTTP status still identifies the failure.
   }
@@ -782,13 +819,14 @@ export class ModelCatalogCache {
 
 /**
  * Per-account model catalogs for one provider adapter: the persisted cache
- * belongs to the default account, every other account gets an in-memory one.
- * A change of default account invalidates the persisted snapshot, since it
- * was fetched with the previous default's plan.
+ * belongs to the default account; every other account gets its own cache,
+ * persisted too when the adapter supplies `accountPersistence`. A change of
+ * default account invalidates the persisted snapshot, since it was fetched
+ * with the previous default's plan.
  */
 export class AccountCatalogCache {
   private readonly defaultCatalog: ModelCatalogCache
-  /** In-memory catalogs for non-default accounts. */
+  /** Catalogs for non-default accounts. */
   private readonly accounts = new Map<string, ModelCatalogCache>()
   /** Account whose snapshot currently lives in {@link defaultCatalog}; cleared on default change. */
   private owner: string | undefined
@@ -796,6 +834,8 @@ export class AccountCatalogCache {
   constructor(
     persistence: CatalogPersistence | undefined,
     private readonly defaultAccount: () => Promise<string | undefined>,
+    /** Durable store for one NON-default account's catalog; in-memory only when omitted. */
+    private readonly accountPersistence?: (account: string) => CatalogPersistence,
   ) {
     this.defaultCatalog = new ModelCatalogCache(persistence)
   }
@@ -805,8 +845,15 @@ export class AccountCatalogCache {
    * @param account - the account to drop, or every account when omitted.
    */
   clear(account?: string): void {
-    if (account === undefined) this.accounts.clear()
-    else this.accounts.delete(account)
+    // invalidate() also drops the persisted snapshot, so a logged-out account
+    // cannot resurface its models from disk.
+    if (account === undefined) {
+      for (const cache of this.accounts.values()) cache.invalidate()
+      this.accounts.clear()
+    } else {
+      this.accounts.get(account)?.invalidate()
+      this.accounts.delete(account)
+    }
     if (account === undefined || this.owner === account || this.owner === undefined) {
       this.owner = undefined
       this.defaultCatalog.invalidate()
@@ -814,7 +861,7 @@ export class AccountCatalogCache {
   }
 
   /**
-   * Persisted cache for the default account; a throwaway cache for any other.
+   * The default account's persisted cache, or another account's own cache.
    * @param account - the account, or the default when omitted.
    * @returns that account's catalog cache.
    */
@@ -830,7 +877,7 @@ export class AccountCatalogCache {
     }
     let cache = this.accounts.get(key)
     if (cache === undefined) {
-      cache = new ModelCatalogCache()
+      cache = new ModelCatalogCache(this.accountPersistence?.(key))
       this.accounts.set(key, cache)
     }
     return cache
@@ -864,8 +911,13 @@ export function isDiscoveryAborted(error: unknown, signal?: AbortSignal): boolea
     && (error.name === 'AbortError' || error.name === 'TimeoutError')
 }
 
-/** Whether discovery failed because the access token was rejected. */
-function isDiscoveryAuthFailure(error: unknown): boolean {
+/**
+ * Whether discovery failed because the access token was rejected. After
+ * {@link discoverOrRetryAuth} this means the token was rejected AGAIN right
+ * after a forced refresh: the login is dead server-side (revoked) even though
+ * the refresh grant still answers, so the store keeps the session.
+ */
+export function isDiscoveryAuthFailure(error: unknown): boolean {
   return (error instanceof OAuthEndpointError && error.status === 401)
     || (error instanceof LlmError && error.code === 'AUTH')
 }

@@ -32,6 +32,7 @@ import {
   discoverAcrossAccounts,
   discoverOrRetryAuth,
   isDiscoveryAborted,
+  isDiscoveryAuthFailure,
   isMissingOrInvalidCredential,
   oauthEndpointError,
   OAuthEndpointError,
@@ -525,6 +526,8 @@ export interface CodexAdapterOptions {
   resolveAttachments?: () => AttachmentStore | undefined
   /** Durable catalog store seeding capability metadata across restarts. */
   catalogStore?: CatalogPersistence
+  /** Durable store for one NON-default account's catalog (the default's lives in `catalogStore`). */
+  accountCatalogStore?: (account: string) => CatalogPersistence
   /** Per-account catalog bound for the picker union (defaults to {@link DISCOVERY_TIMEOUT_MS}). */
   discoveryTimeoutMs?: number
   /** How long this route may hold a turn open waiting for a rate-limit window; defaults to waiting on, six-hour ceiling. */
@@ -668,7 +671,11 @@ export class CodexAdapter extends LlmAdapter {
   constructor(private readonly options: CodexAdapterOptions) {
     super()
     codexClientVersion(options.clientVersion)
-    this.catalogs = new AccountCatalogCache(options.catalogStore, () => options.tokens.defaultAccount())
+    this.catalogs = new AccountCatalogCache(
+      options.catalogStore,
+      () => options.tokens.defaultAccount(),
+      options.accountCatalogStore,
+    )
   }
 
   /** Discovery fetcher: resolves the session through the refresh-aware path. */
@@ -681,6 +688,29 @@ export class CodexAdapter extends LlmAdapter {
   /** Drop cached catalogs after login/logout so the next list does not reuse a stale plan. */
   clearAccountCatalog(account?: string): void {
     this.catalogs.clear(account)
+  }
+
+  /** Picker rows for discovered entries (the wire id doubles as the route id). */
+  private listed(provider: string, models: readonly DiscoveredModel[]): LlmModelInfo[] {
+    return models.map(model => ({
+      provider,
+      id: model.id,
+      name: model.name,
+      ...model.description === undefined ? {} : { description: model.description },
+      inputModalities: CODEX_MODALITIES,
+      ...model.priority === undefined ? {} : { priority: model.priority },
+    } as LlmModelInfo))
+  }
+
+  /**
+   * The last catalog one account successfully listed, without any network.
+   * Routing asks for this when live discovery times out: an account that
+   * listed a model minutes ago is still a better answer than "no models".
+   */
+  async lastKnownOwnModels(provider: string, account: string): Promise<readonly LlmModelInfo[] | undefined> {
+    if (!this.options.discovery || !await this.options.tokens.hasSession(account)) return undefined
+    const known = (await this.catalogs.for(account)).lastKnown()
+    return known === undefined ? undefined : this.listed(provider, known)
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
@@ -739,14 +769,7 @@ export class CodexAdapter extends LlmAdapter {
         catalog,
         () => catalog.get(() => this.fetchCatalog(account, signal)),
       )
-      return discovered.map(model => ({
-        provider,
-        id: model.id,
-        name: model.name,
-        ...model.description === undefined ? {} : { description: model.description },
-        inputModalities: CODEX_MODALITIES,
-        ...model.priority === undefined ? {} : { priority: model.priority },
-      } as LlmModelInfo))
+      return this.listed(provider, discovered)
     } catch (error: unknown) {
       // A cancelled discovery must not fall back to the static catalog — the
       // caller (pool assembly) treats abort as "this account sits out".
@@ -754,6 +777,26 @@ export class CodexAdapter extends LlmAdapter {
       // A permanent refresh failure deletes the stored session: the provider
       // is logged out, so hide it instead of showing a stale static catalog.
       if (isMissingOrInvalidCredential(error)) return []
+      // The backend rejected the token again right after a forced refresh:
+      // the login is revoked server-side. Listing the built-in catalog here
+      // would route requests to a dead account and show phantom models.
+      if (isDiscoveryAuthFailure(error)) {
+        const who = (await this.options.tokens.peek(account))?.emailAddress ?? account ?? 'default account'
+        this.options.onWarn?.(
+          `codex rejected the login of ${who}; hiding its models until it logs in again (${errorChain(error)})`,
+        )
+        return []
+      }
+      // A transient failure (network, 5xx, timeout) must not demote a
+      // working account to the built-in catalog, which lags the backend by
+      // generations: the last successful discovery is the truthful answer.
+      const known = catalog.lastKnown()
+      if (known !== undefined) {
+        this.options.onWarn?.(
+          `codex model discovery failed; using the last discovered catalog (${errorChain(error)})`,
+        )
+        return this.listed(provider, known)
+      }
       this.options.onWarn?.(
         `codex model discovery failed; using the built-in catalog (${errorChain(error)})`,
       )

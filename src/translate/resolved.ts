@@ -8,7 +8,7 @@
 
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ImageBlock, Message, RequestMessage } from '@deepseek-ai/dsh-llm'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { ToolCallId } from '../compat.js'
 
 /** Legacy tool-result block retained for imported histories and translator input. */
@@ -132,6 +132,32 @@ export interface TranslatableMessage {
 const hasImage = (block: InputBlock | TranslatableBlock): boolean => block.type === 'image'
   || (block.type === 'tool-result' && block.content.some(hasImage))
 
+/** A route's cap on outgoing image size; stored attachments are never changed. */
+export interface ImageRequestLimit {
+  /** Longest edge in pixels an image may be sent at. */
+  maxEdge: number
+  /** Encoded-byte target before base64 expansion. */
+  maxBytes: number
+}
+
+/**
+ * The request projection for one oversized image, or undefined when it fits.
+ * Hosts before DSH 0.1.7 read a pixel budget (`maxPixels`), later ones the
+ * target edges (`width`/`height`); each validates only its own fields, so
+ * one projection carries both.
+ */
+export function imageRequestTarget(
+  ref: { width: number; height: number },
+  limit: ImageRequestLimit,
+): { width: number; height: number; maxPixels: number; maxBytes: number } | undefined {
+  const longEdge = Math.max(ref.width, ref.height)
+  if (!(longEdge > limit.maxEdge)) return undefined
+  const short = (edge: number): number => Math.max(1, Math.floor(edge * limit.maxEdge / longEdge))
+  const width = ref.width >= ref.height ? limit.maxEdge : short(ref.width)
+  const height = ref.width >= ref.height ? short(ref.height) : limit.maxEdge
+  return { width, height, maxPixels: width * height, maxBytes: limit.maxBytes }
+}
+
 /**
  * Whether any message carries an image, including one nested in a tool result
  * (withToolResultImages moves those onto the wire too).
@@ -152,12 +178,15 @@ export function hasImages(messages: readonly { content: readonly (InputBlock | T
  * @param messages - the request's conversation messages.
  * @param attachments - the deployment's attachment service, when mounted.
  * @param signal - cancellation for the storage reads.
+ * @param limit - the route's outgoing image cap; oversized images are sent
+ *   downscaled while the stored attachment and history stay untouched.
  * @returns the same messages, resolved and folded for the translators.
  */
 export async function resolveImages(
   messages: readonly InputMessage[],
   attachments: AttachmentStore | undefined,
   signal?: AbortSignal,
+  limit?: ImageRequestLimit,
 ): Promise<readonly TranslatableMessage[]> {
   // No image anywhere means no unresolved ImageBlock for the translators.
   if (!hasImages(messages)) return withToolResultBlocks(messages as readonly ToolRoleMessage[])
@@ -168,17 +197,31 @@ export async function resolveImages(
       'UNSUPPORTED',
     )
   }
+  const readForRequest = async (ref: ImageAttachmentRef) => {
+    const target = limit === undefined ? undefined : imageRequestTarget(ref, limit)
+    if (target !== undefined) {
+      try {
+        const version = await attachments.readImageRequest(ref, target, signal)
+        return { data: version.data, mediaType: version.mediaType, ref: version.attachment }
+      } catch (error) {
+        // A host that cannot derive request images keeps sending the stored bytes, as before.
+        if (signal?.aborted) throw error
+      }
+    }
+    const stored = await attachments.readImage(ref, signal)
+    return { data: stored.data, mediaType: stored.ref.mediaType, ref: stored.ref }
+  }
   const resolveBlock = async (block: InputBlock): Promise<TranslatableBlock[]> => {
     if (block.type === 'tool-result') {
       return [{ ...block, content: (await Promise.all(block.content.map(resolveBlock))).flat() }]
     }
     if (block.type !== 'image') return [block]
-    const stored = await attachments.readImage(block.attachment, signal)
-    const { attachmentId, mediaType, bytes, width, height, name } = stored.ref
+    const { data, mediaType: sentType, ref } = await readForRequest(block.attachment)
+    const { attachmentId, mediaType, bytes, width, height, name } = ref
     return [{
       type: 'image',
-      mediaType: stored.ref.mediaType,
-      dataBase64: Buffer.from(stored.data).toString('base64'),
+      mediaType: sentType,
+      dataBase64: Buffer.from(data).toString('base64'),
     }, {
       type: 'text',
       text: `Image reference (for image_generate.referenceImages): ${JSON.stringify({

@@ -47,6 +47,9 @@ export default defineConfig({
   outDir: 'lib',
   format: 'cjs',
   platform: 'browser',
+  // Pin the syntax target: left unset, tsdown derives it from the package's
+  // engines.node, which describes the node half, not the browser.
+  target: 'es2024',
   // Types ship from tsc (lib/client/index.d.ts); dts here would wrap the
   // banner/footer into .d.cts and break parsing.
   dts: false,

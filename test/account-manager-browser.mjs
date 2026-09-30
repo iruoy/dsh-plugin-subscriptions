@@ -1,16 +1,16 @@
 // Optional standalone UI check. No live server or real account settings used.
 // PLAYWRIGHT_PATH=/path/to/playwright node test/account-manager-browser.mjs
 import assert from 'node:assert/strict'
-import { readdir, mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-const dependencies = await readdir('node_modules/.pnpm')
-const packagePath = name => resolve('node_modules/.pnpm', dependencies.find(entry => entry.startsWith(`${name}@`)), 'node_modules', name)
-const { build } = await import(pathToFileURL(`${packagePath('rolldown')}/dist/index.mjs`))
+// Resolve the locked versions: rolldown through tsdown (it is not a direct dependency), react-dom from here.
+const { build } = await import(pathToFileURL(createRequire(realpathSync('node_modules/tsdown/package.json')).resolve('rolldown')))
 const { chromium } = await import(pathToFileURL(`${process.env.PLAYWRIGHT_PATH}/index.mjs`))
 const result = await build({
   input: 'test/account-manager-browser.fixture.tsx',
-  resolve: { alias: { 'react-dom/client': `${packagePath('react-dom')}/client.js` } },
+  resolve: { alias: { 'react-dom/client': createRequire(import.meta.url).resolve('react-dom/client') } },
   transform: { define: { 'process.env.NODE_ENV': '"production"' } },
   output: { format: 'iife' },
   write: false,

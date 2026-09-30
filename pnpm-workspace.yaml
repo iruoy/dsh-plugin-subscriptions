@@ -1,4 +1,5 @@
 minimumReleaseAgeExclude:
   # DeepSeek Harness packages ship as release candidates the plugin tracks on
-  # purpose; exempt the scope instead of re-listing every package per bump.
-  - '@deepseek-ai/*'
+  # purpose; exempt them by pattern instead of re-listing every package per
+  # bump. Other @deepseek-ai libraries (cordis, cosmokit, schemastery) stay gated.
+  - '@deepseek-ai/dsh-*'

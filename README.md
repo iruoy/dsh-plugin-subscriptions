@@ -78,7 +78,7 @@ Image generation and editing share same-provider account scheduling: try the def
 
 ### DSH compatibility
 
-The current release targets DSH `0.1.7-rc.2` and its updated client and message APIs. Upgrade DSH before using this plugin revision.
+The current release targets DSH `0.2.0-rc.2` and its updated client and message APIs. Upgrade DSH before using this plugin revision.
 
 ### Managing accounts and pool models
 

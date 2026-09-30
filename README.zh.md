@@ -77,7 +77,7 @@ Codex 编辑走 `/backend-api/codex/images/edits`，Grok 编辑走 `/v1/images/e
 
 ### DSH 兼容性
 
-当前版本面向 DSH `0.1.7-rc.2` 及其更新后的客户端与消息 API。使用此插件版本前，请先升级 DSH。
+当前版本面向 DSH `0.2.0-rc.2` 及其更新后的客户端与消息 API。使用此插件版本前，请先升级 DSH。
 
 ### 管理账号与 Pool 模型
 
